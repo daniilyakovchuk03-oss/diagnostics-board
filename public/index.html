@@ -332,10 +332,15 @@ textarea{resize:vertical;min-height:52px}
 .pop__quick button:hover{border-color:var(--frame-lit);background:var(--hover)}
 .pop__foot{display:flex;gap:8px;justify-content:flex-end}
 .card__date{font-size:11px;color:var(--muted);font-family:"IBM Plex Mono",monospace}
-a.card{text-decoration:none;color:inherit;cursor:pointer}
-a.card:hover{border-color:var(--frame-lit);box-shadow:0 2px 10px rgba(18,23,26,.10)}
-a.card:hover .card__name{text-decoration:underline;text-underline-offset:2px}
-html[data-theme="dark"] a.card:hover{box-shadow:0 2px 12px rgba(0,0,0,.35)}
+/* Кнопка перехода в сделку amoCRM */
+.card{grid-template-columns:auto 1fr auto auto}
+.amo{
+  display:grid;place-items:center;width:34px;height:26px;border-radius:6px;
+  border:1px solid var(--rule);background:var(--panel);color:var(--muted);
+  font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:lowercase;
+  text-decoration:none;transition:.15s ease;align-self:center;
+}
+.amo:hover{background:var(--blue);border-color:var(--blue);color:#fff}
 .mark{cursor:default}
 .card[data-status="late"]{border-left-color:var(--amber);background:var(--card-moved)}
 .stat.a b{color:var(--amber)}
@@ -452,6 +457,9 @@ html[data-theme="dark"] a.card:hover{box-shadow:0 2px 12px rgba(0,0,0,.35)}
    ═══════════════════════════════════════════════════════════ */
 
 let MANAGERS = [];
+/* Адрес амо приходит с сервера. Запасное значение — чтобы кнопка
+   работала даже если сервер ещё не обновлён. */
+const AMO_FALLBACK = 'kursorschool.amocrm.ru';
 const STATUS_NAME = {wait:'Ожидает', came:'Пришёл', no:'Не пришёл', moved:'Перенос',
                      late:'Время вышло, в амо без изменений'};
 const today = new Date();
@@ -519,10 +527,9 @@ function cardHTML(x){
   const st = eff(x);
   const meta = [isRange() ? shortDate(x.date) : null, x.mk ? 'МК '+x.mk : null].filter(Boolean).join(' · ');
   // Карточка ведёт на сделку в амо. Открываем в новой вкладке, чтобы доска не терялась.
-  const url = state.amoDomain && x.id ? `https://${state.amoDomain}/leads/detail/${x.id}` : '';
-  const tag = url ? 'a' : 'article';
-  const attrs = url ? ` href="${url}" target="_blank" rel="noopener" title="Открыть сделку в amoCRM"` : '';
-  return `<${tag} class="card" data-status="${st}"${attrs}>
+  const domain = state.amoDomain || AMO_FALLBACK;
+  const url = x.id ? `https://${domain}/leads/detail/${x.id}` : '';
+  return `<article class="card" data-status="${st}">
     <div class="card__time">${x.t}</div>
     <div>
       <div class="card__name">${x.c}</div>
@@ -530,7 +537,8 @@ function cardHTML(x){
       ${x.note ? `<div class="card__note">${x.note}</div>` : ''}
     </div>
     <span class="mark" title="${STATUS_NAME[st]}" aria-label="${STATUS_NAME[st]}">${markSVG(st)}</span>
-  </${tag}>`;
+    ${url ? `<a class="amo" href="${url}" target="_blank" rel="noopener" title="Открыть сделку в amoCRM">amo</a>` : ''}
+  </article>`;
 }
 
 function renderCols(){
