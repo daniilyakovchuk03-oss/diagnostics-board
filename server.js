@@ -114,8 +114,22 @@ function statusOf(lead) {
   return here > anchor ? 'came' : 'wait';
 }
 
+/* Лид для воронки: считаем по дате создания сделки, а не встречи */
+function toLead(lead) {
+  const created = local(Number(lead.created_at));
+  const raw = field(lead, CONFIG.DATE_FIELD_ID);
+  const st = statusOf(lead);
+  return {
+    id: lead.id,
+    created: created.date,
+    assigned: Boolean(raw),                 // назначена ли диагностика
+    st,
+    m: columnOf(lead),
+  };
+}
+
 /* ── Кэш в памяти ──────────────────────────────────────────── */
-let cache = { items: [], updatedAt: null, error: null };
+let cache = { items: [], leads: [], updatedAt: null, error: null };
 
 async function refresh() {
   if (!DOMAIN || !TOKEN) return;
@@ -131,6 +145,7 @@ async function refresh() {
     }
     cache = {
       items: leads.map(toAppointment).filter(Boolean),
+      leads: leads.map(toLead),
       updatedAt: new Date().toISOString(),
       error: null,
     };
@@ -253,6 +268,31 @@ const server = http.createServer(async (req, res) => {
       error: cache.error,
       // Даты в формате YYYY-MM-DD сравниваются как строки корректно
       items: cache.items.filter(x => !from || (x.date >= from && x.date <= to)),
+    });
+  }
+
+  // Воронка по лидам: пришло → назначено → дошло
+  if (url.pathname === '/api/funnel') {
+    const from = url.searchParams.get('from');
+    const to   = url.searchParams.get('to') || from;
+    const list = cache.leads.filter(l => !from || (l.created >= from && l.created <= to));
+
+    const count = arr => ({
+      leads:    arr.length,
+      assigned: arr.filter(l => l.assigned).length,
+      came:     arr.filter(l => l.st === 'came').length,
+      no:       arr.filter(l => l.st === 'no').length,
+    });
+
+    return json(200, {
+      updatedAt: cache.updatedAt,
+      error: cache.error,
+      total: count(list),
+      byManager: CONFIG.MANAGERS.map(m => ({
+        id: m.id, name: m.name, ...count(list.filter(l => l.m === m.id)),
+      })),
+      // Лиды, за которых никто не отвечает из отдела
+      other: count(list.filter(l => !l.m)),
     });
   }
 
