@@ -77,10 +77,40 @@ function toAppointment(lead) {
     t: when.time,
     m: col,
     c: field(lead, CONFIG.NAME_FIELD_ID) || lead.name || 'Без имени',
-    st: CONFIG.STATUS_MAP[lead.status_id] || 'wait',
+    st: statusOf(lead),
     mk: '',
     note: '',
   };
+}
+
+/* ── Порядок этапов в воронке ──────────────────────────────────
+   Всё, что стоит в воронке ПОЗЖЕ этапа «Записан на диагностику»,
+   считается состоявшейся встречей. Исключения — в STATUS_OVERRIDE.
+   Так новые этапы подхватятся сами, без правки конфига. */
+let stageOrder = {};   // { status_id: позиция }
+
+async function loadStages() {
+  if (!CONFIG.PIPELINE_ID) return;
+  try {
+    const p = await amo(`/api/v4/leads/pipelines/${CONFIG.PIPELINE_ID}`);
+    const list = (p && p._embedded && p._embedded.statuses) || [];
+    stageOrder = {};
+    for (const s of list) stageOrder[s.id] = s.sort;
+    console.log(`Этапы воронки загружены: ${list.length}`);
+  } catch (e) {
+    console.error('Не удалось загрузить этапы воронки:', e.message);
+  }
+}
+
+function statusOf(lead) {
+  const id = lead.status_id;
+  const override = CONFIG.STATUS_OVERRIDE[id];
+  if (override) return override;                       // явное правило важнее порядка
+
+  const anchor = stageOrder[CONFIG.ANCHOR_STATUS_ID];
+  const here   = stageOrder[id];
+  if (anchor === undefined || here === undefined) return 'wait';
+  return here > anchor ? 'came' : 'wait';
 }
 
 /* ── Кэш в памяти ──────────────────────────────────────────── */
@@ -219,8 +249,9 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`Доска запущена на порту ${PORT}`);
+  await loadStages();
   refresh();
   setInterval(refresh, Math.max(20, CONFIG.REFRESH_SEC) * 1000);
 });
