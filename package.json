@@ -1,0 +1,13 @@
+{
+  "name": "diagnostics-board",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Доска диагностик онлайн-отдела, данные из amoCRM",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
