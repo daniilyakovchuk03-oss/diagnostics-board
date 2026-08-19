@@ -341,6 +341,23 @@ textarea{resize:vertical;min-height:52px}
   text-decoration:none;transition:.15s ease;align-self:center;
 }
 .amo:hover{background:var(--blue);border-color:var(--blue);color:#fff}
+/* Воронка по лидам */
+.funnel{padding:20px;display:grid;gap:16px}
+.fsteps{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+.fstep{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);padding:16px 18px;box-shadow:var(--shadow);position:relative}
+.fstep b{display:block;font-family:"IBM Plex Mono",monospace;font-size:34px;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+.fstep span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+.fstep em{display:block;margin-top:7px;font-style:normal;font-size:12px;color:var(--muted)}
+.fstep.g b{color:var(--green)} .fstep.a b{color:var(--amber)} .fstep.r b{color:var(--red)}
+.ftable{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);overflow:auto;box-shadow:var(--shadow)}
+.ftable table{border-collapse:collapse;width:100%;min-width:520px}
+.ftable th,.ftable td{padding:11px 14px;text-align:right;border-bottom:1px solid var(--rule-soft);font-size:14px}
+.ftable th:first-child,.ftable td:first-child{text-align:left}
+.ftable th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600;border-bottom:2px solid var(--ink)}
+.ftable td{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.ftable td:first-child{font-family:"Golos Text",sans-serif;font-weight:500}
+.ftable tr:last-child td{border-bottom:0}
+.ftable tr.dim td{color:var(--muted)}
 .mark{cursor:default}
 .card[data-status="late"]{border-left-color:var(--amber);background:var(--card-moved)}
 .stat.a b{color:var(--amber)}
@@ -365,6 +382,10 @@ textarea{resize:vertical;min-height:52px}
     <button data-tab="board" aria-pressed="true">
       <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="2.5" y="2.5" width="6" height="15" rx="1.5"/><rect x="11.5" y="2.5" width="6" height="9" rx="1.5"/></svg>
       <span>Диагностики</span>
+    </button>
+    <button data-tab="funnel" aria-pressed="false">
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M2.6 3.5h14.8l-5.6 6.6v5.6l-3.6 1.8v-7.4Z"/></svg>
+      <span>Лиды</span>
     </button>
     <button data-tab="calls" aria-pressed="false">
       <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 3.2 8 6.1 6.3 7.9a9 9 0 0 0 5.8 5.8l1.8-1.7 2.9 1.6v3a1.4 1.4 0 0 1-1.5 1.4A14.2 14.2 0 0 1 2.9 4.7 1.4 1.4 0 0 1 4.3 3.2Z"/></svg>
@@ -442,6 +463,10 @@ textarea{resize:vertical;min-height:52px}
   </main>
 </div>
 
+<section id="funnelView" hidden>
+  <div class="funnel" id="funnel"></div>
+</section>
+
 <section id="callsView" hidden>
   <div class="stats" id="callStats"></div>
   <div class="metrics" id="metrics"></div>
@@ -473,7 +498,7 @@ const daysBetween = (a,b) => Math.round((dateOf(b)-dateOf(a))/86400000);
 
 const state = { from:isoOf(today), to:isoOf(today), items:[], filter:'all', mk:null, view:'board',
                 mkEnabled:false, configured:false, updatedAt:null, failed:false,
-                tab:'board', calls:null };
+                tab:'board', calls:null, funnel:null };
 const isRange = () => state.from !== state.to;
 
 
@@ -670,15 +695,84 @@ function renderCalls(){
     </section>`).join('');
 }
 
+/* ── Вкладка «Лиды» ───────────────────────────────────────── */
+const pct = (a,b) => b ? Math.round(a/b*100) : 0;
+
+async function loadFunnel(){
+  if(state.tab !== 'funnel') return;
+  try{
+    const r = await fetch(`/api/funnel?from=${state.from}&to=${state.to}`);
+    state.funnel = await r.json();
+  }catch(e){ state.funnel = {error:'Нет связи с сервером'}; }
+  renderFunnel();
+}
+
+function renderFunnel(){
+  const f = state.funnel, box = document.getElementById('funnel');
+  if(!f){ box.innerHTML = '<div class="notice">Загружаем…</div>'; return; }
+  if(f.error){ box.innerHTML = `<div class="notice"><b>Не удалось получить данные</b>${f.error}</div>`; return; }
+
+  const t = f.total;
+  const rows = f.byManager.map(m=>`
+    <tr>
+      <td>${m.name}</td>
+      <td>${m.leads}</td>
+      <td>${m.assigned}</td>
+      <td>${pct(m.assigned, m.leads)}%</td>
+      <td>${m.came}</td>
+      <td>${pct(m.came, m.assigned)}%</td>
+    </tr>`).join('');
+
+  const other = f.other && f.other.leads
+    ? `<tr class="dim"><td>Без ответственного из отдела</td><td>${f.other.leads}</td><td>${f.other.assigned}</td><td>${pct(f.other.assigned,f.other.leads)}%</td><td>${f.other.came}</td><td>${pct(f.other.came,f.other.assigned)}%</td></tr>`
+    : '';
+
+  box.innerHTML = `
+    <div class="fsteps">
+      <div class="fstep">
+        <span>Пришло лидов</span><b>${t.leads}</b>
+        <em>новых сделок за период</em>
+      </div>
+      <div class="fstep a">
+        <span>Назначено</span><b>${t.assigned}</b>
+        <em>${pct(t.assigned, t.leads)}% от лидов</em>
+      </div>
+      <div class="fstep g">
+        <span>Дошло</span><b>${t.came}</b>
+        <em>${pct(t.came, t.assigned)}% от назначенных</em>
+      </div>
+      <div class="fstep r">
+        <span>Не дошло</span><b>${t.no}</b>
+        <em>${pct(t.no, t.assigned)}% от назначенных</em>
+      </div>
+    </div>
+
+    <div class="ftable">
+      <table>
+        <thead><tr>
+          <th>Менеджер</th><th>Лидов</th><th>Назначено</th><th>Конверсия</th><th>Дошло</th><th>Доходимость</th>
+        </tr></thead>
+        <tbody>${rows}${other}</tbody>
+      </table>
+    </div>
+
+    <div class="notice" style="text-align:left">
+      Считается по <b style="display:inline">дате создания сделки</b>: сколько лидов пришло за период,
+      скольким из них назначили диагностику и сколько в итоге дошло. Диагностика может состояться позже —
+      тогда цифра «дошло» по этим лидам подрастёт задним числом.
+    </div>`;
+}
+
 function setTab(t){
   state.tab = t;
   document.querySelectorAll('.side__nav button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.tab===t));
   if(window.innerWidth <= 900) closeSide();
-  const calls = t === 'calls';
-  document.getElementById('callsView').hidden = !calls;
-  document.getElementById('stats').hidden = calls;
-  document.getElementById('wrap').hidden = calls;
-  if(calls){ renderCalls(); loadCalls(); }
+  document.getElementById('callsView').hidden  = t !== 'calls';
+  document.getElementById('funnelView').hidden = t !== 'funnel';
+  document.getElementById('stats').hidden = t !== 'board';
+  document.getElementById('wrap').hidden  = t !== 'board';
+  if(t === 'calls'){ renderCalls(); loadCalls(); }
+  if(t === 'funnel'){ renderFunnel(); loadFunnel(); }
 }
 document.querySelectorAll('.side__nav button').forEach(b=> b.onclick = ()=> setTab(b.dataset.tab));
 
@@ -711,7 +805,7 @@ function setView(v){
 }
 document.getElementById('viewBoard').onclick = ()=>setView('board');
 document.getElementById('viewGrid').onclick  = ()=>setView('grid');
-function reload(){ state.calls = null; loadDay(); loadCalls(); }
+function reload(){ state.calls = null; state.funnel = null; loadDay(); loadCalls(); loadFunnel(); }
 function move(dir){
   const span = daysBetween(state.from, state.to) + 1;
   state.from = shift(state.from, dir*span);
@@ -777,6 +871,7 @@ themeBtn.onclick = ()=> setTheme(document.documentElement.dataset.theme==='dark'
 (async ()=>{ await loadConfig(); await loadDay(); })();
 setInterval(loadDay, 20000);
 setInterval(loadCalls, 120000);
+setInterval(loadFunnel, 60000);
 </script>
 </body>
 </html>
