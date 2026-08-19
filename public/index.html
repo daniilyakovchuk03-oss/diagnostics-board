@@ -242,6 +242,22 @@ textarea{resize:vertical;min-height:52px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important}}
 </style><style>
+.tabs{display:flex;gap:2px;background:var(--panel);border-bottom:1px solid var(--rule);padding:0 20px}
+.tabs button{
+  background:none;border:0;border-bottom:2px solid transparent;padding:12px 18px;
+  cursor:pointer;color:var(--muted);font-size:14px;font-weight:500;transition:.15s ease;
+}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-pressed="true"]{color:var(--ink);border-bottom-color:var(--blue)}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;padding:20px}
+.mcol{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.mrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:11px 14px;border-bottom:1px solid var(--rule-soft)}
+.mrow:last-child{border-bottom:0}
+.mrow span{font-size:13px;color:var(--muted)}
+.mrow b{font-family:"IBM Plex Mono",monospace;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+.mrow.g b{color:var(--green)} .mrow.a b{color:var(--amber)}
+.bar{height:4px;background:var(--rule-soft);margin:0 14px 12px;border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--green);border-radius:2px}
 .mark{cursor:default}
 .card[data-status="late"]{border-left-color:var(--amber);background:var(--card-moved)}
 .stat.a b{color:var(--amber)}
@@ -271,6 +287,11 @@ textarea{resize:vertical;min-height:52px}
   </div>
 </header>
 
+<nav class="tabs">
+  <button data-tab="board" aria-pressed="true">Диагностики</button>
+  <button data-tab="calls" aria-pressed="false">Звонки</button>
+</nav>
+
 <div class="stats" id="stats"></div>
 
 <div class="wrap" id="wrap">
@@ -297,6 +318,11 @@ textarea{resize:vertical;min-height:52px}
   </main>
 </div>
 
+<section id="callsView" hidden>
+  <div class="stats" id="callStats"></div>
+  <div class="metrics" id="metrics"></div>
+</section>
+
 <script>
 /* ═══════════════════════════════════════════════════════════
    Доска только показывает. Источник правды — этапы в amoCRM.
@@ -307,7 +333,9 @@ let MANAGERS = [];
 const STATUS_NAME = {wait:'Ожидает', came:'Пришёл', no:'Не пришёл', moved:'Перенос',
                      late:'Время вышло, в амо без изменений'};
 const today = new Date();
-const state = { date:new Date(today), items:[], filter:'all', mk:null, view:'board', mkEnabled:false, configured:false, updatedAt:null, failed:false };
+const state = { date:new Date(today), items:[], filter:'all', mk:null, view:'board',
+                mkEnabled:false, configured:false, updatedAt:null, failed:false,
+                tab:'board', calls:null };
 
 const pad = n => String(n).padStart(2,'0');
 const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -326,6 +354,7 @@ async function loadConfig(){
   try{
     const r = await fetch('/api/config'); const c = await r.json();
     MANAGERS = c.managers; state.mkEnabled = c.mkEnabled; state.configured = c.configured;
+    if(c.callsEnabled === false) document.querySelector('.tabs button[data-tab="calls"]').style.opacity = '.5';
   }catch(e){ state.failed = true; }
 }
 async function loadDay(){
@@ -439,6 +468,66 @@ function render(){
   document.getElementById('gridWrap').classList.toggle('hidden', state.view!=='grid');
 }
 
+/* ── Вкладка «Звонки» ─────────────────────────────────────── */
+const hhmm = sec => Math.floor(sec/3600) + ' ч ' + String(Math.floor(sec%3600/60)).padStart(2,'0') + ' мин';
+
+async function loadCalls(){
+  if(state.tab !== 'calls') return;
+  try{
+    const r = await fetch('/api/calls?date=' + iso(state.date));
+    state.calls = await r.json();
+  }catch(e){ state.calls = {error:'Нет связи с сервером', managers:[]}; }
+  renderCalls();
+}
+
+function renderCalls(){
+  const c = state.calls;
+  const box = document.getElementById('metrics');
+  const top = document.getElementById('callStats');
+  if(!c){ box.innerHTML = '<div class="notice">Загружаем…</div>'; top.innerHTML=''; return; }
+
+  if(c.enabled === false){
+    top.innerHTML = '';
+    box.innerHTML = '<div class="notice"><b>Сипуни не подключена</b>Добавьте переменные SIPUNI_USER и SIPUNI_SECRET в настройках сервиса.</div>';
+    return;
+  }
+  if(c.error){
+    top.innerHTML = '';
+    box.innerHTML = '<div class="notice"><b>Не удалось получить данные</b>' + c.error + '</div>';
+    return;
+  }
+
+  const sum = (k) => c.managers.reduce((a,m)=>a+m[k],0);
+  const att = sum('attempts'), con = sum('connected');
+  top.innerHTML = `
+    <div class="stat"><b>${att}</b><span>Попыток</span></div>
+    <div class="stat g"><b>${con}</b><span>Дозвонов</span></div>
+    <div class="stat"><b>${att ? Math.round(con/att*100) : 0}%</b><span>Дозвон</span></div>
+    <div class="stat b"><b>${hhmm(sum('talkSec'))}</b><span>На линии</span></div>`;
+
+  box.innerHTML = c.managers.map(m=>`
+    <section class="mcol">
+      <div class="col__head"><span class="col__name">${m.name}</span></div>
+      <div class="mrow"><span>Попыток дозвониться</span><b>${m.attempts}</b></div>
+      <div class="mrow g"><span>Дозвонов</span><b>${m.connected}</b></div>
+      <div class="mrow a"><span>Процент дозвона</span><b>${m.rate}%</b></div>
+      <div class="bar"><i style="width:${m.rate}%"></i></div>
+      <div class="mrow"><span>Время на линии</span><b>${hhmm(m.talkSec)}</b></div>
+      <div class="mrow"><span>Принято входящих</span><b>${m.incoming}</b></div>
+    </section>`).join('');
+}
+
+function setTab(t){
+  state.tab = t;
+  document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.tab===t));
+  const calls = t === 'calls';
+  document.getElementById('callsView').hidden = !calls;
+  document.getElementById('stats').hidden = calls;
+  document.getElementById('wrap').hidden = calls;
+  if(calls){ renderCalls(); loadCalls(); }
+}
+document.querySelectorAll('.tabs button').forEach(b=> b.onclick = ()=> setTab(b.dataset.tab));
+
 /* ── События ──────────────────────────────────────────────── */
 document.addEventListener('click', e=>{
   const chip = e.target.closest('.chip[data-filter]');
@@ -456,9 +545,9 @@ function setView(v){
 }
 document.getElementById('viewBoard').onclick = ()=>setView('board');
 document.getElementById('viewGrid').onclick  = ()=>setView('grid');
-document.getElementById('prev').onclick  = ()=>{ state.date.setDate(state.date.getDate()-1); loadDay(); };
-document.getElementById('next').onclick  = ()=>{ state.date.setDate(state.date.getDate()+1); loadDay(); };
-document.getElementById('today').onclick = ()=>{ state.date = new Date(today); loadDay(); };
+document.getElementById('prev').onclick  = ()=>{ state.date.setDate(state.date.getDate()-1); state.calls=null; loadDay(); loadCalls(); };
+document.getElementById('next').onclick  = ()=>{ state.date.setDate(state.date.getDate()+1); state.calls=null; loadDay(); loadCalls(); };
+document.getElementById('today').onclick = ()=>{ state.date = new Date(today); state.calls=null; loadDay(); loadCalls(); };
 
 /* ── Тема ─────────────────────────────────────────────────── */
 const themeBtn = document.getElementById('theme');
@@ -471,6 +560,7 @@ themeBtn.onclick = ()=> setTheme(document.documentElement.dataset.theme==='dark'
 /* ── Старт и автообновление ───────────────────────────────── */
 (async ()=>{ await loadConfig(); await loadDay(); })();
 setInterval(loadDay, 20000);
+setInterval(loadCalls, 120000);
 </script>
 </body>
 </html>
