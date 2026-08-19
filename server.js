@@ -226,6 +226,7 @@ const server = http.createServer(async (req, res) => {
       mkEnabled: CONFIG.MK_ENABLED,
       configured: Boolean(CONFIG.DATE_FIELD_ID),
       callsEnabled: sipuni.enabled(),
+      amoDomain: DOMAIN,
     });
   }
 
