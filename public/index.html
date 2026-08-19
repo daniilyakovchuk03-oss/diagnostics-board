@@ -312,6 +312,701 @@ textarea{resize:vertical;min-height:52px}
 .mrow.g b{color:var(--green)} .mrow.a b{color:var(--amber)}
 .bar{height:4px;background:var(--rule-soft);margin:0 14px 12px;border-radius:2px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--green);border-radius:2px}
+.picker{position:relative}
+.nav .date{cursor:pointer;user-select:none}
+.nav .date:hover{background:rgba(0,0,0,.28)}
+.pop{
+  position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);
+  background:var(--panel);color:var(--ink);border:1px solid var(--rule);border-radius:12px;
+  box-shadow:0 18px 50px rgba(0,0,0,.3);padding:14px;width:290px;z-index:60;
+}
+.pop h4{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
+.pop__row{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:12px}
+.pop label{font-size:11px;color:var(--muted);display:grid;gap:4px}
+.pop input{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--rule);border-radius:8px;background:var(--input-bg);color:var(--ink);width:100%}
+.pop__quick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.pop__quick button{
+  background:none;border:1px solid var(--rule);border-radius:99px;padding:5px 11px;
+  font-size:12px;cursor:pointer;color:var(--ink);transition:.15s ease;
+}
+.pop__quick button:hover{border-color:var(--frame-lit);background:var(--hover)}
+.pop__foot{display:flex;gap:8px;justify-content:flex-end}
+.card__date{font-size:11px;color:var(--muted);font-family:"IBM Plex Mono",monospace}
+.mark{cursor:default}
+.card[data-status="late"]{border-left-color:var(--amber);background:var(--card-moved)}
+.stat.a b{color:var(--amber)}
+.mark:hover{border-color:var(--rule);background:transparent}
+.wrap.solo{grid-template-columns:1fr}
+.notice{max-width:820px;margin:0 auto;padding:26px 22px;background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);text-align:center;color:var(--muted)}
+.notice b{color:var(--ink);display:block;margin-bottom:6px;font-size:16px}
+.notice a{color:var(--blue)}
+</style>
+</head>
+<body>
+
+<div class="scrim" id="scrim"></div>
+<div class="app">
+
+<aside class="side" id="side">
+  <div class="side__brand">
+    <h1>Диагностики</h1>
+    <span>Онлайн-отдел</span>
+  </div>
+  <nav class="side__nav">
+    <button data-tab="board" aria-pressed="true">
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="2.5" y="2.5" width="6" height="15" rx="1.5"/><rect x="11.5" y="2.5" width="6" height="9" rx="1.5"/></svg>
+      <span>Диагностики</span>
+    </button>
+    <button data-tab="calls" aria-pressed="false">
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 3.2 8 6.1 6.3 7.9a9 9 0 0 0 5.8 5.8l1.8-1.7 2.9 1.6v3a1.4 1.4 0 0 1-1.5 1.4A14.2 14.2 0 0 1 2.9 4.7 1.4 1.4 0 0 1 4.3 3.2Z"/></svg>
+      <span>Звонки</span>
+    </button>
+  </nav>
+  <div class="side__foot">
+    <div class="acc" title="Аккаунт администратора">
+      <div class="acc__ava">А</div>
+      <div class="acc__txt"><b>Администратор</b><span>Полный доступ</span></div>
+    </div>
+  </div>
+</aside>
+
+<div class="main">
+<header class="frame">
+  <button class="burger" id="burger" aria-label="Свернуть меню">
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
+  </button>
+  <div class="nav">
+    <button id="prev" aria-label="Предыдущий день">←</button>
+    <div class="picker">
+      <div class="date" id="dateLabel" role="button" tabindex="0" title="Выбрать период">—</div>
+      <div class="pop" id="pop" hidden>
+        <h4>Период</h4>
+        <div class="pop__row">
+          <label>С<input type="date" id="dFrom"></label>
+          <label>По<input type="date" id="dTo"></label>
+        </div>
+        <div class="pop__quick">
+          <button data-range="0">Сегодня</button>
+          <button data-range="-1">Вчера</button>
+          <button data-range="7">7 дней</button>
+          <button data-range="30">30 дней</button>
+          <button data-range="month">Этот месяц</button>
+        </div>
+        <div class="pop__foot">
+          <button class="btn-ghost" id="popCancel">Отмена</button>
+          <button class="add" id="popApply">Показать</button>
+        </div>
+      </div>
+    </div>
+    <button id="next" aria-label="Следующий день">→</button>
+    <button id="today">Сегодня</button>
+  </div>
+  <div class="src">
+    <span class="dot" id="dot"></span> <span id="srcText">подключение…</span>
+    <button id="theme" class="theme" title="Сменить тему" aria-label="Сменить тему"></button>
+  </div>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="wrap" id="wrap">
+  <aside class="rail" id="rail" hidden>
+    <h2>Мастер-классы</h2>
+    <div class="mks" id="mks"></div>
+  </aside>
+
+  <main class="board">
+    <div class="controls">
+      <button class="chip" data-filter="all" aria-pressed="true">Все</button>
+      <button class="chip" data-filter="wait" aria-pressed="false">Ожидают</button>
+      <button class="chip" data-filter="came" aria-pressed="false">Пришли</button>
+      <button class="chip" data-filter="no" aria-pressed="false">Не пришли</button>
+      <button class="chip" data-filter="late" aria-pressed="false">Без отметки</button>
+      <span class="spacer"></span>
+      <button class="chip" id="viewBoard" aria-pressed="true">Доска</button>
+      <button class="chip" id="viewGrid" aria-pressed="false">Сетка по времени</button>
+    </div>
+
+    <div id="notice" class="notice" hidden></div>
+    <div class="cols" id="cols"></div>
+    <div class="grid hidden" id="gridWrap"></div>
+  </main>
+</div>
+
+<section id="callsView" hidden>
+  <div class="stats" id="callStats"></div>
+  <div class="metrics" id="metrics"></div>
+</section>
+
+</div><!-- /.main -->
+</div><!-- /.app -->
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   Доска только показывает. Источник правды — этапы в amoCRM.
+   Данные приходят с нашего сервера, он забирает их у амо.
+   ═══════════════════════════════════════════════════════════ */
+
+let MANAGERS = [];
+const STATUS_NAME = {wait:'Ожидает', came:'Пришёл', no:'Не пришёл', moved:'Перенос',
+                     late:'Время вышло, в амо без изменений'};
+const today = new Date();
+const state = { from:isoOf(today), to:isoOf(today), items:[], filter:'all', mk:null, view:'board',
+                mkEnabled:false, configured:false, updatedAt:null, failed:false,
+                tab:'board', calls:null };
+const isRange = () => state.from !== state.to;
+
+const pad = n => String(n).padStart(2,'0');
+const isoOf = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const dateOf = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y, m-1, d); };
+const shift = (s,days) => { const d=dateOf(s); d.setDate(d.getDate()+days); return isoOf(d); };
+const daysBetween = (a,b) => Math.round((dateOf(b)-dateOf(a))/86400000);
+
+function markSVG(st){
+  if(st==='came')  return `<svg width="19" height="19" viewBox="0 0 19 19"><path d="M3 10.5 L7.4 15 L16 4.5" fill="none" stroke="var(--green)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  if(st==='no')    return `<svg width="19" height="19" viewBox="0 0 19 19"><path d="M4 4 L15 15 M15 4 L4 15" fill="none" stroke="var(--red)" stroke-width="2.6" stroke-linecap="round"/></svg>`;
+  if(st==='moved') return `<svg width="19" height="19" viewBox="0 0 19 19"><path d="M3.5 12.5 h9.5 a3 3 0 0 0 0-6 H7" fill="none" stroke="var(--amber)" stroke-width="2.4" stroke-linecap="round"/><path d="M9.5 3.5 L6.5 6.5 L9.5 9.5" fill="none" stroke="var(--amber)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  if(st==='late')  return `<svg width="19" height="19" viewBox="0 0 19 19"><path d="M6.6 6.4a3 3 0 1 1 3.4 4.3v1.4" fill="none" stroke="var(--amber)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="15.4" r="1.25" fill="var(--amber)"/></svg>`;
+  return `<svg width="19" height="19" viewBox="0 0 19 19"><circle cx="9.5" cy="9.5" r="4.2" fill="none" stroke="#AEB9B4" stroke-width="2"/></svg>`;
+}
+
+/* ── Загрузка ─────────────────────────────────────────────── */
+async function loadConfig(){
+  try{
+    const r = await fetch('/api/config'); const c = await r.json();
+    MANAGERS = c.managers; state.mkEnabled = c.mkEnabled; state.configured = c.configured;
+    if(c.callsEnabled === false) document.querySelector('.side__nav button[data-tab="calls"]').style.opacity = '.5';
+  }catch(e){ state.failed = true; }
+}
+async function loadDay(){
+  try{
+    const r = await fetch(`/api/appointments?from=${state.from}&to=${state.to}`);
+    const d = await r.json();
+    state.items = d.items || []; state.updatedAt = d.updatedAt; state.failed = false;
+  }catch(e){ state.failed = true; }
+  render();
+}
+
+/* Время встречи прошло, а в амо статуса нет — показываем вопрос */
+function eff(x){
+  if(x.st !== 'wait') return x.st;
+  const [h,m] = x.t.split(':').map(Number);
+  const when = dateOf(x.date);
+  when.setHours(h, m, 0, 0);
+  return when < new Date() ? 'late' : 'wait';
+}
+
+/* ── Отрисовка ────────────────────────────────────────────── */
+function visible(){
+  return state.items.filter(x=>{
+    if(state.mk && x.mk !== state.mk) return false;
+    if(state.filter==='all') return true;
+    return eff(x) === state.filter;
+  });
+}
+
+const shortDate = s => dateOf(s).toLocaleDateString('ru-RU',{day:'numeric',month:'short'});
+
+function cardHTML(x){
+  const st = eff(x);
+  const meta = [isRange() ? shortDate(x.date) : null, x.mk ? 'МК '+x.mk : null].filter(Boolean).join(' · ');
+  return `<article class="card" data-status="${st}">
+    <div class="card__time">${x.t}</div>
+    <div>
+      <div class="card__name">${x.c}</div>
+      ${meta ? `<div class="card__meta">${meta}</div>` : ''}
+      ${x.note ? `<div class="card__note">${x.note}</div>` : ''}
+    </div>
+    <span class="mark" title="${STATUS_NAME[st]}" aria-label="${STATUS_NAME[st]}">${markSVG(st)}</span>
+  </article>`;
+}
+
+function renderCols(){
+  const vis = visible();
+  document.getElementById('cols').innerHTML = MANAGERS.map(m=>{
+    const mine = vis.filter(x=>x.m===m.id)
+      .sort((a,b)=> (a.date+a.t).localeCompare(b.date+b.t));
+    const total = state.items.filter(x=>x.m===m.id);
+    const came = total.filter(x=>eff(x)==='came').length;
+    return `<section class="col">
+      <div class="col__head"><span class="col__name">${m.name}</span></div>
+      <div class="col__count"><span>Встреч <b>${total.length}</b></span><span>Дошли <b>${came}</b></span></div>
+      <div class="col__list">${mine.length ? mine.map(cardHTML).join('') : '<div class="empty">Записей нет</div>'}</div>
+    </section>`;
+  }).join('');
+}
+
+function renderGrid(){
+  const vis = visible();
+  let rows = '';
+  for(let mnt=9*60; mnt<=20*60; mnt+=30){
+    const t = pad(Math.floor(mnt/60))+':'+pad(mnt%60);
+    rows += `<tr><td class="gtime ${mnt%60===0?'hour':''}">${t}</td>` +
+      MANAGERS.map(m=>`<td>${vis.filter(x=>x.m===m.id && x.t===t).map(cardHTML).join('')}</td>`).join('') + '</tr>';
+  }
+  document.getElementById('gridWrap').innerHTML =
+    `<table><thead><tr><th class="t">Время</th>${MANAGERS.map(m=>`<th><span class="col__name">${m.name}</span></th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderStats(){
+  const a = state.items;
+  const came = a.filter(x=>eff(x)==='came').length;
+  const no   = a.filter(x=>eff(x)==='no').length;
+  const wait = a.filter(x=>eff(x)==='wait').length;
+  const late = a.filter(x=>eff(x)==='late').length;
+  const done = came + no;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><b>${a.length}</b><span>Назначено</span></div>
+    <div class="stat g"><b>${came}</b><span>Дошли</span></div>
+    <div class="stat r"><b>${no}</b><span>Не дошли</span></div>
+    <div class="stat b"><b>${wait}</b><span>Ожидают</span></div>
+    <div class="stat a"><b>${late}</b><span>Без отметки</span></div>
+    <div class="stat"><b>${done ? Math.round(came/done*100) : 0}%</b><span>Доходимость</span></div>`;
+}
+
+function renderSource(){
+  const dot = document.getElementById('dot'), txt = document.getElementById('srcText');
+  if(state.failed){ dot.style.background='#EF6A5E'; txt.textContent='Нет связи с сервером'; return; }
+  if(!state.configured){ dot.style.background='#E0A93B'; txt.textContent='Не настроено — откройте /setup'; return; }
+  dot.style.background='#43C081';
+  const u = state.updatedAt ? new Date(state.updatedAt) : null;
+  txt.textContent = 'amoCRM · обновлено ' + (u ? pad(u.getHours())+':'+pad(u.getMinutes()) : '—');
+}
+
+function renderNotice(){
+  const n = document.getElementById('notice');
+  if(!state.configured){
+    n.hidden = false;
+    n.innerHTML = '<b>Доска ещё не настроена</b>Откройте страницу <a href="/setup">/setup</a>, пришлите скриншот — и заполним соответствия полей и этапов.';
+  } else n.hidden = true;
+}
+
+function label(){
+  const one = new Intl.DateTimeFormat('ru-RU',{weekday:'short', day:'numeric', month:'long'});
+  if(!isRange()) return one.format(dateOf(state.from)) + (state.from===isoOf(today) ? ' · сегодня' : '');
+  const n = daysBetween(state.from, state.to) + 1;
+  return `${shortDate(state.from)} — ${shortDate(state.to)} · ${n} дн.`;
+}
+
+function render(){
+  document.getElementById('dateLabel').textContent = label();
+  // Сетка по времени осмысленна только для одного дня
+  document.getElementById('viewGrid').hidden = isRange();
+  if(isRange() && state.view === 'grid') setView('board');
+  document.getElementById('rail').hidden = !state.mkEnabled;
+  document.getElementById('wrap').classList.toggle('solo', !state.mkEnabled);
+  renderStats(); renderSource(); renderNotice();
+  state.view==='board' ? renderCols() : renderGrid();
+  document.getElementById('cols').classList.toggle('hidden', state.view!=='board');
+  document.getElementById('gridWrap').classList.toggle('hidden', state.view!=='grid');
+}
+
+/* ── Вкладка «Звонки» ─────────────────────────────────────── */
+const hhmm = sec => Math.floor(sec/3600) + ' ч ' + String(Math.floor(sec%3600/60)).padStart(2,'0') + ' мин';
+
+async function loadCalls(){
+  if(state.tab !== 'calls') return;
+  try{
+    const r = await fetch(`/api/calls?from=${state.from}&to=${state.to}`);
+    state.calls = await r.json();
+  }catch(e){ state.calls = {error:'Нет связи с сервером', managers:[]}; }
+  renderCalls();
+}
+
+function renderCalls(){
+  const c = state.calls;
+  const box = document.getElementById('metrics');
+  const top = document.getElementById('callStats');
+  if(!c){ box.innerHTML = '<div class="notice">Загружаем…</div>'; top.innerHTML=''; return; }
+
+  if(c.enabled === false){
+    top.innerHTML = '';
+    box.innerHTML = '<div class="notice"><b>Сипуни не подключена</b>Добавьте переменные SIPUNI_USER и SIPUNI_SECRET в настройках сервиса.</div>';
+    return;
+  }
+  if(c.error){
+    top.innerHTML = '';
+    box.innerHTML = '<div class="notice"><b>Не удалось получить данные</b>' + c.error + '</div>';
+    return;
+  }
+
+  const sum = (k) => c.managers.reduce((a,m)=>a+m[k],0);
+  const att = sum('attempts'), con = sum('connected');
+  top.innerHTML = `
+    <div class="stat"><b>${att}</b><span>Попыток</span></div>
+    <div class="stat g"><b>${con}</b><span>Дозвонов</span></div>
+    <div class="stat"><b>${att ? Math.round(con/att*100) : 0}%</b><span>Дозвон</span></div>
+    <div class="stat b"><b>${hhmm(sum('talkSec'))}</b><span>На линии</span></div>`;
+
+  box.innerHTML = c.managers.map(m=>`
+    <section class="mcol">
+      <div class="col__head"><span class="col__name">${m.name}</span></div>
+      <div class="mrow"><span>Попыток дозвониться</span><b>${m.attempts}</b></div>
+      <div class="mrow g"><span>Дозвонов</span><b>${m.connected}</b></div>
+      <div class="mrow a"><span>Процент дозвона</span><b>${m.rate}%</b></div>
+      <div class="bar"><i style="width:${m.rate}%"></i></div>
+      <div class="mrow"><span>Время на линии</span><b>${hhmm(m.talkSec)}</b></div>
+      <div class="mrow"><span>Принято входящих</span><b>${m.incoming}</b></div>
+    </section>`).join('');
+}
+
+function setTab(t){
+  state.tab = t;
+  document.querySelectorAll('.side__nav button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.tab===t));
+  if(window.innerWidth <= 900) closeSide();
+  const calls = t === 'calls';
+  document.getElementById('callsView').hidden = !calls;
+  document.getElementById('stats').hidden = calls;
+  document.getElementById('wrap').hidden = calls;
+  if(calls){ renderCalls(); loadCalls(); }
+}
+document.querySelectorAll('.side__nav button').forEach(b=> b.onclick = ()=> setTab(b.dataset.tab));
+
+/* Сворачивание боковой панели: на широком экране — в узкую полосу,
+   на телефоне — выезжает поверх содержимого */
+const side = document.getElementById('side'), scrim = document.getElementById('scrim');
+function closeSide(){ side.classList.remove('open'); scrim.classList.remove('on'); }
+document.getElementById('burger').onclick = ()=>{
+  if(window.innerWidth <= 900){
+    side.classList.toggle('open');
+    scrim.classList.toggle('on', side.classList.contains('open'));
+  } else side.classList.toggle('mini');
+};
+scrim.onclick = closeSide;
+
+/* ── События ──────────────────────────────────────────────── */
+document.addEventListener('click', e=>{
+  const chip = e.target.closest('.chip[data-filter]');
+  if(chip){
+    state.filter = chip.dataset.filter;
+    document.querySelectorAll('.chip[data-filter]').forEach(c=>c.setAttribute('aria-pressed', c===chip));
+    render();
+  }
+});
+function setView(v){
+  state.view = v;
+  document.getElementById('viewBoard').setAttribute('aria-pressed', v==='board');
+  document.getElementById('viewGrid').setAttribute('aria-pressed', v==='grid');
+  render();
+}
+document.getElementById('viewBoard').onclick = ()=>setView('board');
+document.getElementById('viewGrid').onclick  = ()=>setView('grid');
+function reload(){ state.calls = null; loadDay(); loadCalls(); }
+function move(dir){
+  const span = daysBetween(state.from, state.to) + 1;
+  state.from = shift(state.from, dir*span);
+  state.to   = shift(state.to,   dir*span);
+  reload();
+}
+document.getElementById('prev').onclick  = ()=> move(-1);
+document.getElementById('next').onclick  = ()=> move(1);
+document.getElementById('today').onclick = ()=>{ state.from = state.to = isoOf(today); reload(); };
+
+/* ── Выбор периода ────────────────────────────────────────── */
+const pop = document.getElementById('pop');
+const dFrom = document.getElementById('dFrom'), dTo = document.getElementById('dTo');
+
+function openPop(){
+  dFrom.value = state.from; dTo.value = state.to;
+  pop.hidden = false;
+}
+document.getElementById('dateLabel').onclick = ()=> pop.hidden ? openPop() : (pop.hidden = true);
+document.getElementById('dateLabel').onkeydown = e => { if(e.key==='Enter'||e.key===' '){ e.preventDefault(); openPop(); } };
+document.getElementById('popCancel').onclick = ()=> pop.hidden = true;
+
+document.querySelectorAll('.pop__quick button').forEach(b=> b.onclick = ()=>{
+  const r = b.dataset.range;
+  if(r === 'month'){
+    const d = new Date(today);
+    dFrom.value = isoOf(new Date(d.getFullYear(), d.getMonth(), 1));
+    dTo.value   = isoOf(today);
+  } else if(r === '-1'){
+    dFrom.value = dTo.value = shift(isoOf(today), -1);
+  } else if(r === '0'){
+    dFrom.value = dTo.value = isoOf(today);
+  } else {
+    dTo.value   = isoOf(today);
+    dFrom.value = shift(isoOf(today), -(Number(r)-1));
+  }
+});
+
+document.getElementById('popApply').onclick = ()=>{
+  let from = dFrom.value, to = dTo.value;
+  if(!from && !to) return;
+  from = from || to; to = to || from;
+  if(from > to) [from, to] = [to, from];   // перепутали местами — молча исправляем
+  state.from = from; state.to = to;
+  pop.hidden = true;
+  reload();
+};
+
+// Клик мимо окошка закрывает его
+document.addEventListener('click', e=>{
+  if(!pop.hidden && !e.target.closest('.picker')) pop.hidden = true;
+});
+
+/* ── Тема ─────────────────────────────────────────────────── */
+const themeBtn = document.getElementById('theme');
+const SUN  = `<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10" cy="10" r="3.6"/><path d="M10 1.6v2M10 16.4v2M18.4 10h-2M3.6 10h-2M15.9 4.1l-1.4 1.4M5.5 14.5l-1.4 1.4M15.9 15.9l-1.4-1.4M5.5 5.5L4.1 4.1"/></svg>`;
+const MOON = `<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M16.5 12.4A7 7 0 0 1 7.6 3.5a7 7 0 1 0 8.9 8.9Z"/></svg>`;
+function setTheme(t){ document.documentElement.dataset.theme = t; themeBtn.innerHTML = t==='dark' ? SUN : MOON; }
+setTheme(matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+themeBtn.onclick = ()=> setTheme(document.documentElement.dataset.theme==='dark' ? 'light' : 'dark');
+
+/* ── Старт и автообновление ───────────────────────────────── */
+(async ()=>{ await loadConfig(); await loadDay(); })();
+setInterval(loadDay, 20000);
+setInterval(loadCalls, 120000);
+</script>
+</body>
+</html>  --shadow:0 1px 0 rgba(0,0,0,.2), 0 2px 10px rgba(0,0,0,.28);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:"Golos Text",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  font-size:15px;
+  line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
+
+/* ── Рамка доски ───────────────────────────── */
+.frame{
+  background:linear-gradient(180deg,var(--frame-lit),var(--frame));
+  color:#fff;
+  padding:14px 20px;
+  display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:30;
+  box-shadow:0 2px 10px rgba(0,0,0,.18);
+}
+.brand{display:flex;align-items:baseline;gap:12px;min-width:0}
+.brand h1{
+  font-family:"Oswald",sans-serif;font-weight:500;
+  font-size:22px;letter-spacing:.14em;text-transform:uppercase;margin:0;white-space:nowrap;
+}
+.brand .dept{font-size:12px;color:#B9C4BF;letter-spacing:.06em;text-transform:uppercase}
+
+.nav{display:flex;align-items:center;gap:6px}
+.nav button{
+  background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.16);
+  color:#fff;padding:6px 12px;border-radius:8px;cursor:pointer;
+  font-size:14px;transition:background .15s ease;
+}
+.nav button:hover{background:rgba(255,255,255,.18)}
+.nav .date{
+  font-family:"IBM Plex Mono",monospace;font-size:14px;
+  padding:6px 10px;min-width:180px;text-align:center;color:#EAF0ED;
+  border:1px solid rgba(255,255,255,.16);border-radius:8px;background:rgba(0,0,0,.14);
+}
+.src{
+  font-size:12px;color:#B9C4BF;display:flex;align-items:center;gap:7px;
+}
+.src .dot{width:7px;height:7px;border-radius:50%;background:#E0A93B;box-shadow:0 0 0 3px rgba(224,169,59,.2)}
+.theme{
+  background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.16);
+  color:#fff;width:32px;height:32px;border-radius:8px;cursor:pointer;
+  display:grid;place-items:center;margin-left:4px;transition:background .15s ease;
+}
+.theme:hover{background:rgba(255,255,255,.18)}
+
+/* ── Полоса показателей ────────────────────── */
+.stats{
+  display:flex;gap:0;flex-wrap:wrap;
+  background:var(--panel);border-bottom:1px solid var(--rule);
+  padding:0 20px;
+}
+.stat{padding:12px 22px 12px 0;margin-right:22px;border-right:1px solid var(--rule-soft);display:flex;align-items:baseline;gap:8px}
+.stat:last-child{border-right:0}
+.stat b{font-family:"IBM Plex Mono",monospace;font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.stat.g b{color:var(--green)} .stat.r b{color:var(--red)} .stat.b b{color:var(--blue)}
+
+/* ── Каркас страницы ───────────────────────── */
+.wrap{display:grid;grid-template-columns:236px 1fr;gap:20px;padding:20px;align-items:start}
+
+/* ── Рельса МК ─────────────────────────────── */
+.rail{position:sticky;top:78px}
+.rail h2,.board h2{
+  font-family:"Oswald",sans-serif;font-weight:500;font-size:13px;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 10px 2px;
+}
+.mk{
+  background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);
+  padding:11px 12px;margin-bottom:8px;cursor:pointer;width:100%;text-align:left;
+  display:block;transition:border-color .15s ease, transform .1s ease;
+}
+.mk:hover{border-color:var(--frame-lit)}
+.mk[aria-pressed="true"]{border-color:var(--blue);box-shadow:0 0 0 2px var(--ring)}
+.mk__top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.mk__time{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:17px;font-variant-numeric:tabular-nums}
+.mk__n{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--muted)}
+.mk__bar{height:5px;background:var(--rule-soft);border-radius:3px;margin:9px 0 6px;overflow:hidden}
+.mk__fill{height:100%;border-radius:3px;transition:width .3s ease}
+.mk__label{font-size:12px;color:var(--muted)}
+.legend{font-size:11.5px;color:var(--muted);line-height:1.7;margin-top:14px;padding-top:12px;border-top:1px solid var(--rule)}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:middle}
+
+/* ── Панель управления доской ──────────────── */
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.chip{
+  background:var(--panel);border:1px solid var(--rule);border-radius:99px;
+  padding:6px 14px;font-size:13px;cursor:pointer;transition:.15s ease;
+}
+.chip:hover{border-color:var(--frame-lit)}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.spacer{flex:1}
+.add{
+  background:var(--blue);color:#fff;border:0;border-radius:8px;padding:8px 16px;
+  cursor:pointer;font-weight:500;box-shadow:var(--shadow);
+}
+.add:hover{filter:brightness(1.08)}
+html[data-theme="dark"] .add{color:#0E1412}
+
+/* ── Колонки менеджеров ────────────────────── */
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.col{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.col__head{padding:12px 14px 11px;border-bottom:2px solid var(--ink);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.col__name{font-family:"Oswald",sans-serif;font-weight:500;font-size:21px;letter-spacing:.06em;text-transform:uppercase;line-height:1}
+.col__count{padding:6px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--rule-soft);display:flex;gap:10px}
+.col__count b{font-weight:600;color:var(--ink)}
+.col__list{padding:8px;display:flex;flex-direction:column;gap:6px;min-height:70px}
+
+.card{
+  display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;
+  padding:9px 9px 9px 11px;border-radius:8px;border:1px solid var(--rule-soft);
+  background:var(--card-bg);border-left:3px solid var(--blue);
+}
+.card:hover{border-color:var(--rule);border-left-color:inherit}
+.card[data-status="came"]{border-left-color:var(--green);background:var(--card-came)}
+.card[data-status="no"]{border-left-color:var(--red);background:var(--card-no);opacity:var(--no-opacity)}
+.card[data-status="moved"]{border-left-color:var(--amber);background:var(--card-moved)}
+.card__time{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:15px;font-variant-numeric:tabular-nums;padding-top:1px}
+.card[data-status="no"] .card__name{text-decoration:line-through;text-decoration-color:var(--red)}
+.card__name{font-weight:500;font-size:15px;overflow-wrap:anywhere}
+.card__meta{font-size:11.5px;color:var(--muted);font-family:"IBM Plex Mono",monospace;margin-top:2px}
+.card__note{font-size:12px;color:var(--amber);margin-top:3px}
+.mark{
+  width:30px;height:30px;border-radius:7px;border:1px dashed var(--rule);
+  background:transparent;cursor:pointer;display:grid;place-items:center;padding:0;
+  transition:.15s ease;
+}
+.mark:hover{border-color:var(--frame-lit);background:var(--hover)}
+.card[data-status="came"] .mark,.card[data-status="no"] .mark,.card[data-status="moved"] .mark{border-style:solid;border-color:transparent}
+.mark svg{display:block}
+.empty{padding:16px 12px;font-size:13px;color:var(--muted);text-align:center}
+
+/* ── Сетка по времени ──────────────────────── */
+.grid{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);overflow:auto;box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{border-bottom:1px solid var(--rule-soft);border-right:1px solid var(--rule-soft);vertical-align:top;padding:5px}
+th{position:sticky;top:0;background:var(--panel);z-index:2;padding:11px 10px;text-align:left;border-bottom:2px solid var(--ink)}
+th.t{width:64px}
+.gtime{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--muted);padding:9px 8px;font-variant-numeric:tabular-nums;white-space:nowrap;background:var(--gtime-bg)}
+.gtime.hour{color:var(--ink);font-weight:600}
+tr:hover .gtime{color:var(--ink)}
+.grid .card{border-left-width:3px}
+.hidden{display:none !important}
+
+/* ── Диалог ────────────────────────────────── */
+dialog{border:1px solid var(--rule);border-radius:12px;padding:0;background:var(--panel);color:var(--ink);max-width:400px;width:calc(100% - 32px);box-shadow:0 18px 50px rgba(0,0,0,.25)}
+dialog::backdrop{background:rgba(18,23,26,.42)}
+.dlg__head{padding:16px 18px 0}
+.dlg__head h3{font-family:"Oswald",sans-serif;font-weight:500;letter-spacing:.1em;text-transform:uppercase;font-size:16px;margin:0}
+form.dlg{padding:14px 18px 18px;display:grid;gap:11px}
+label{font-size:12px;color:var(--muted);display:grid;gap:4px}
+input,select,textarea{
+  font:inherit;padding:8px 10px;border:1px solid var(--rule);border-radius:8px;color:var(--ink);background:var(--input-bg);
+}
+textarea{resize:vertical;min-height:52px}
+.dlg__row{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.dlg__foot{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+.btn-ghost{background:transparent;border:1px solid var(--rule);border-radius:8px;padding:8px 14px;cursor:pointer}
+
+@media (max-width:900px){
+  .wrap{grid-template-columns:1fr;gap:16px;padding:14px}
+  .rail{position:static}
+  .rail .mks{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+  .mk{margin-bottom:0}
+  .stat{padding-right:16px;margin-right:16px}
+  .brand h1{font-size:18px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important}}
+</style><style>
+[hidden]{display:none !important}
+
+/* ── Каркас: боковая панель + рабочая область ── */
+.app{display:flex;min-height:100vh;align-items:stretch}
+.side{
+  flex:0 0 224px;width:224px;background:var(--panel);border-right:1px solid var(--rule);
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
+  transition:flex-basis .18s ease, width .18s ease;z-index:40;
+}
+.side__brand{padding:18px 18px 16px;border-bottom:1px solid var(--rule-soft);overflow:hidden}
+.side__brand h1{
+  font-family:"Oswald",sans-serif;font-weight:500;font-size:19px;letter-spacing:.13em;
+  text-transform:uppercase;margin:0;white-space:nowrap;
+}
+.side__brand span{font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.side__nav{padding:10px;display:flex;flex-direction:column;gap:3px;flex:1}
+.side__nav button{
+  display:flex;align-items:center;gap:11px;width:100%;text-align:left;
+  background:none;border:0;border-radius:9px;padding:10px 11px;cursor:pointer;
+  color:var(--muted);font-size:14px;font-weight:500;transition:.15s ease;white-space:nowrap;overflow:hidden;
+}
+.side__nav button:hover{background:var(--hover);color:var(--ink)}
+.side__nav button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.side__nav svg{flex:0 0 18px}
+.side__foot{padding:10px;border-top:1px solid var(--rule-soft)}
+.acc{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:9px;overflow:hidden}
+.acc:hover{background:var(--hover)}
+.acc__ava{
+  flex:0 0 32px;height:32px;border-radius:8px;background:var(--blue);color:#fff;
+  display:grid;place-items:center;font-weight:600;font-size:14px;
+}
+.acc__txt{min-width:0;line-height:1.3}
+.acc__txt b{display:block;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acc__txt span{font-size:11px;color:var(--muted);white-space:nowrap}
+
+/* Свёрнутое состояние */
+.side.mini{flex-basis:62px;width:62px}
+.side.mini .side__brand h1{font-size:0;letter-spacing:0}
+.side.mini .side__brand h1::after{content:"Д";font-size:19px;letter-spacing:0}
+.side.mini .side__brand span,
+.side.mini .side__nav button span,
+.side.mini .acc__txt{display:none}
+.side.mini .side__nav button{justify-content:center;padding:10px 0}
+.side.mini .acc{justify-content:center;padding:9px 0}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.burger{
+  background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.16);color:#fff;
+  width:32px;height:32px;border-radius:8px;cursor:pointer;display:grid;place-items:center;
+}
+.burger:hover{background:rgba(255,255,255,.18)}
+.scrim{display:none}
+
+@media (max-width:900px){
+  .side{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .2s ease;box-shadow:0 0 40px rgba(0,0,0,.4)}
+  .side.open{transform:none}
+  .side.mini{flex-basis:224px;width:224px}
+  .side.mini .side__brand span,.side.mini .side__nav button span,.side.mini .acc__txt{display:block}
+  .side.mini .side__nav button{justify-content:flex-start;padding:10px 11px}
+  .scrim.on{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:35}
+}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;padding:20px}
+.mcol{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.mrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:11px 14px;border-bottom:1px solid var(--rule-soft)}
+.mrow:last-child{border-bottom:0}
+.mrow span{font-size:13px;color:var(--muted)}
+.mrow b{font-family:"IBM Plex Mono",monospace;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+.mrow.g b{color:var(--green)} .mrow.a b{color:var(--amber)}
+.bar{height:4px;background:var(--rule-soft);margin:0 14px 12px;border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--green);border-radius:2px}
 .mark{cursor:default}
 .card[data-status="late"]{border-left-color:var(--amber);background:var(--card-moved)}
 .stat.a b{color:var(--amber)}
