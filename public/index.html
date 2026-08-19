@@ -332,6 +332,10 @@ textarea{resize:vertical;min-height:52px}
 .pop__quick button:hover{border-color:var(--frame-lit);background:var(--hover)}
 .pop__foot{display:flex;gap:8px;justify-content:flex-end}
 .card__date{font-size:11px;color:var(--muted);font-family:"IBM Plex Mono",monospace}
+a.card{text-decoration:none;color:inherit;cursor:pointer}
+a.card:hover{border-color:var(--frame-lit);box-shadow:0 2px 10px rgba(18,23,26,.10)}
+a.card:hover .card__name{text-decoration:underline;text-underline-offset:2px}
+html[data-theme="dark"] a.card:hover{box-shadow:0 2px 12px rgba(0,0,0,.35)}
 .mark{cursor:default}
 .card[data-status="late"]{border-left-color:var(--amber);background:var(--card-moved)}
 .stat.a b{color:var(--amber)}
@@ -478,6 +482,7 @@ async function loadConfig(){
   try{
     const r = await fetch('/api/config'); const c = await r.json();
     MANAGERS = c.managers; state.mkEnabled = c.mkEnabled; state.configured = c.configured;
+    state.amoDomain = c.amoDomain || '';
     if(c.callsEnabled === false) document.querySelector('.side__nav button[data-tab="calls"]').style.opacity = '.5';
   }catch(e){ state.failed = true; }
 }
@@ -513,7 +518,11 @@ const shortDate = s => dateOf(s).toLocaleDateString('ru-RU',{day:'numeric',month
 function cardHTML(x){
   const st = eff(x);
   const meta = [isRange() ? shortDate(x.date) : null, x.mk ? 'МК '+x.mk : null].filter(Boolean).join(' · ');
-  return `<article class="card" data-status="${st}">
+  // Карточка ведёт на сделку в амо. Открываем в новой вкладке, чтобы доска не терялась.
+  const url = state.amoDomain && x.id ? `https://${state.amoDomain}/leads/detail/${x.id}` : '';
+  const tag = url ? 'a' : 'article';
+  const attrs = url ? ` href="${url}" target="_blank" rel="noopener" title="Открыть сделку в amoCRM"` : '';
+  return `<${tag} class="card" data-status="${st}"${attrs}>
     <div class="card__time">${x.t}</div>
     <div>
       <div class="card__name">${x.c}</div>
@@ -521,7 +530,7 @@ function cardHTML(x){
       ${x.note ? `<div class="card__note">${x.note}</div>` : ''}
     </div>
     <span class="mark" title="${STATUS_NAME[st]}" aria-label="${STATUS_NAME[st]}">${markSVG(st)}</span>
-  </article>`;
+  </${tag}>`;
 }
 
 function renderCols(){
