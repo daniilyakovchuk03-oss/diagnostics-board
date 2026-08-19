@@ -242,13 +242,67 @@ textarea{resize:vertical;min-height:52px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important}}
 </style><style>
-.tabs{display:flex;gap:2px;background:var(--panel);border-bottom:1px solid var(--rule);padding:0 20px}
-.tabs button{
-  background:none;border:0;border-bottom:2px solid transparent;padding:12px 18px;
-  cursor:pointer;color:var(--muted);font-size:14px;font-weight:500;transition:.15s ease;
+[hidden]{display:none !important}
+
+/* ── Каркас: боковая панель + рабочая область ── */
+.app{display:flex;min-height:100vh;align-items:stretch}
+.side{
+  flex:0 0 224px;width:224px;background:var(--panel);border-right:1px solid var(--rule);
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
+  transition:flex-basis .18s ease, width .18s ease;z-index:40;
 }
-.tabs button:hover{color:var(--ink)}
-.tabs button[aria-pressed="true"]{color:var(--ink);border-bottom-color:var(--blue)}
+.side__brand{padding:18px 18px 16px;border-bottom:1px solid var(--rule-soft);overflow:hidden}
+.side__brand h1{
+  font-family:"Oswald",sans-serif;font-weight:500;font-size:19px;letter-spacing:.13em;
+  text-transform:uppercase;margin:0;white-space:nowrap;
+}
+.side__brand span{font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.side__nav{padding:10px;display:flex;flex-direction:column;gap:3px;flex:1}
+.side__nav button{
+  display:flex;align-items:center;gap:11px;width:100%;text-align:left;
+  background:none;border:0;border-radius:9px;padding:10px 11px;cursor:pointer;
+  color:var(--muted);font-size:14px;font-weight:500;transition:.15s ease;white-space:nowrap;overflow:hidden;
+}
+.side__nav button:hover{background:var(--hover);color:var(--ink)}
+.side__nav button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.side__nav svg{flex:0 0 18px}
+.side__foot{padding:10px;border-top:1px solid var(--rule-soft)}
+.acc{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:9px;overflow:hidden}
+.acc:hover{background:var(--hover)}
+.acc__ava{
+  flex:0 0 32px;height:32px;border-radius:8px;background:var(--blue);color:#fff;
+  display:grid;place-items:center;font-weight:600;font-size:14px;
+}
+.acc__txt{min-width:0;line-height:1.3}
+.acc__txt b{display:block;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acc__txt span{font-size:11px;color:var(--muted);white-space:nowrap}
+
+/* Свёрнутое состояние */
+.side.mini{flex-basis:62px;width:62px}
+.side.mini .side__brand h1{font-size:0;letter-spacing:0}
+.side.mini .side__brand h1::after{content:"Д";font-size:19px;letter-spacing:0}
+.side.mini .side__brand span,
+.side.mini .side__nav button span,
+.side.mini .acc__txt{display:none}
+.side.mini .side__nav button{justify-content:center;padding:10px 0}
+.side.mini .acc{justify-content:center;padding:9px 0}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.burger{
+  background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.16);color:#fff;
+  width:32px;height:32px;border-radius:8px;cursor:pointer;display:grid;place-items:center;
+}
+.burger:hover{background:rgba(255,255,255,.18)}
+.scrim{display:none}
+
+@media (max-width:900px){
+  .side{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .2s ease;box-shadow:0 0 40px rgba(0,0,0,.4)}
+  .side.open{transform:none}
+  .side.mini{flex-basis:224px;width:224px}
+  .side.mini .side__brand span,.side.mini .side__nav button span,.side.mini .acc__txt{display:block}
+  .side.mini .side__nav button{justify-content:flex-start;padding:10px 11px}
+  .scrim.on{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:35}
+}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;padding:20px}
 .mcol{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
 .mrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:11px 14px;border-bottom:1px solid var(--rule-soft)}
@@ -270,11 +324,37 @@ textarea{resize:vertical;min-height:52px}
 </head>
 <body>
 
-<header class="frame">
-  <div class="brand">
+<div class="scrim" id="scrim"></div>
+<div class="app">
+
+<aside class="side" id="side">
+  <div class="side__brand">
     <h1>Диагностики</h1>
-    <span class="dept">Онлайн-отдел</span>
+    <span>Онлайн-отдел</span>
   </div>
+  <nav class="side__nav">
+    <button data-tab="board" aria-pressed="true">
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="2.5" y="2.5" width="6" height="15" rx="1.5"/><rect x="11.5" y="2.5" width="6" height="9" rx="1.5"/></svg>
+      <span>Диагностики</span>
+    </button>
+    <button data-tab="calls" aria-pressed="false">
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 3.2 8 6.1 6.3 7.9a9 9 0 0 0 5.8 5.8l1.8-1.7 2.9 1.6v3a1.4 1.4 0 0 1-1.5 1.4A14.2 14.2 0 0 1 2.9 4.7 1.4 1.4 0 0 1 4.3 3.2Z"/></svg>
+      <span>Звонки</span>
+    </button>
+  </nav>
+  <div class="side__foot">
+    <div class="acc" title="Аккаунт администратора">
+      <div class="acc__ava">А</div>
+      <div class="acc__txt"><b>Администратор</b><span>Полный доступ</span></div>
+    </div>
+  </div>
+</aside>
+
+<div class="main">
+<header class="frame">
+  <button class="burger" id="burger" aria-label="Свернуть меню">
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3 5h14M3 10h14M3 15h14"/></svg>
+  </button>
   <div class="nav">
     <button id="prev" aria-label="Предыдущий день">←</button>
     <div class="date" id="dateLabel">—</div>
@@ -286,11 +366,6 @@ textarea{resize:vertical;min-height:52px}
     <button id="theme" class="theme" title="Сменить тему" aria-label="Сменить тему"></button>
   </div>
 </header>
-
-<nav class="tabs">
-  <button data-tab="board" aria-pressed="true">Диагностики</button>
-  <button data-tab="calls" aria-pressed="false">Звонки</button>
-</nav>
 
 <div class="stats" id="stats"></div>
 
@@ -323,6 +398,9 @@ textarea{resize:vertical;min-height:52px}
   <div class="metrics" id="metrics"></div>
 </section>
 
+</div><!-- /.main -->
+</div><!-- /.app -->
+
 <script>
 /* ═══════════════════════════════════════════════════════════
    Доска только показывает. Источник правды — этапы в amoCRM.
@@ -354,7 +432,7 @@ async function loadConfig(){
   try{
     const r = await fetch('/api/config'); const c = await r.json();
     MANAGERS = c.managers; state.mkEnabled = c.mkEnabled; state.configured = c.configured;
-    if(c.callsEnabled === false) document.querySelector('.tabs button[data-tab="calls"]').style.opacity = '.5';
+    if(c.callsEnabled === false) document.querySelector('.side__nav button[data-tab="calls"]').style.opacity = '.5';
   }catch(e){ state.failed = true; }
 }
 async function loadDay(){
@@ -519,14 +597,27 @@ function renderCalls(){
 
 function setTab(t){
   state.tab = t;
-  document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.tab===t));
+  document.querySelectorAll('.side__nav button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.tab===t));
+  if(window.innerWidth <= 900) closeSide();
   const calls = t === 'calls';
   document.getElementById('callsView').hidden = !calls;
   document.getElementById('stats').hidden = calls;
   document.getElementById('wrap').hidden = calls;
   if(calls){ renderCalls(); loadCalls(); }
 }
-document.querySelectorAll('.tabs button').forEach(b=> b.onclick = ()=> setTab(b.dataset.tab));
+document.querySelectorAll('.side__nav button').forEach(b=> b.onclick = ()=> setTab(b.dataset.tab));
+
+/* Сворачивание боковой панели: на широком экране — в узкую полосу,
+   на телефоне — выезжает поверх содержимого */
+const side = document.getElementById('side'), scrim = document.getElementById('scrim');
+function closeSide(){ side.classList.remove('open'); scrim.classList.remove('on'); }
+document.getElementById('burger').onclick = ()=>{
+  if(window.innerWidth <= 900){
+    side.classList.toggle('open');
+    scrim.classList.toggle('on', side.classList.contains('open'));
+  } else side.classList.toggle('mini');
+};
+scrim.onclick = closeSide;
 
 /* ── События ──────────────────────────────────────────────── */
 document.addEventListener('click', e=>{
