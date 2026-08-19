@@ -14,6 +14,7 @@ const http = require('http');
 const fs   = require('fs');
 const path = require('path');
 const CONFIG = require('./config');
+const sipuni = require('./sipuni');
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -224,7 +225,21 @@ const server = http.createServer(async (req, res) => {
       managers: CONFIG.MANAGERS.map(m => ({ id: m.id, name: m.name })),
       mkEnabled: CONFIG.MK_ENABLED,
       configured: Boolean(CONFIG.DATE_FIELD_ID),
+      callsEnabled: sipuni.enabled(),
     });
+  }
+
+  // Статистика звонков из Сипуни
+  if (url.pathname === '/api/calls') {
+    const date = url.searchParams.get('date') || new Date().toISOString().slice(0, 10);
+    return json(200, await sipuni.stats(date));
+  }
+
+  // Сырой CSV — на случай, если цифры разойдутся с кабинетом Сипуни
+  if (url.pathname === '/sipuni/raw') {
+    const date = url.searchParams.get('date') || new Date().toISOString().slice(0, 10);
+    try { return send(200, 'text/plain; charset=utf-8', await sipuni.raw(date)); }
+    catch (e) { return send(500, 'text/plain; charset=utf-8', 'Ошибка: ' + e.message); }
   }
 
   if (url.pathname === '/api/appointments') {
