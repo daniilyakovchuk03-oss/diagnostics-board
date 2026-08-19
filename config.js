@@ -26,12 +26,14 @@ module.exports = {
   // Колонку определяем по ответственному за сделку
   TEACHER_FIELD_ID: 0,
 
-  // Колонки на доске — сотрудники онлайн-отдела
+  /* Колонки на доске — сотрудники онлайн-отдела.
+     amo_user_id — ID в амо (для диагностик)
+     ext         — внутренний номер в Сипуни (для звонков) */
   MANAGERS: [
-    { id: 'tair',    name: 'Таир',   amo_user_id: 14051598 }, // online-4@kursor.school
-    { id: 'dulat',   name: 'Дулат',  amo_user_id: 14051518 }, // online-1@kursor.school
-    { id: 'sanzhar', name: 'Санжар', amo_user_id: 14051590 }, // online-2@kursor.school
-    { id: 'dancho',  name: 'Данчо',  amo_user_id: 14051594 }, // online-3@kursor.school
+    { id: 'tair',    name: 'Таир',   amo_user_id: 14051598, ext: 227 },
+    { id: 'dulat',   name: 'Дулат',  amo_user_id: 14051518, ext: 221 },
+    { id: 'sanzhar', name: 'Санжар', amo_user_id: 14051590, ext: 220 },
+    { id: 'dancho',  name: 'Данчо',  amo_user_id: 14051594, ext: 211 },
   ],
 
   /* ─── Как считается статус ───────────────────────────────────
@@ -53,4 +55,7 @@ module.exports = {
 
   // Колонка мастер-классов слева. В амо пока нет привязки к МК.
   MK_ENABLED: false,
+
+  // Как часто обновлять статистику звонков, секунды
+  CALLS_REFRESH_SEC: 180,
 };
