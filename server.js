@@ -134,6 +134,7 @@ function toLead(lead) {
     st,
     m: columnOf(lead),
     src: sourceOf(lead),
+    won: Number(lead.status_id) === Number(CONFIG.WON_STATUS_ID),
   };
 }
 
@@ -284,7 +285,10 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/funnel') {
     const from = url.searchParams.get('from');
     const to   = url.searchParams.get('to') || from;
-    const list = cache.leads.filter(l => !from || (l.created >= from && l.created <= to));
+    const src  = url.searchParams.get('src');   // bot | target | пусто = все
+    const list = cache.leads.filter(l =>
+      (!from || (l.created >= from && l.created <= to)) &&
+      (!src || l.src === src));
 
     /* Считаем «дошло» и «не дошло» ТОЛЬКО среди назначенных, иначе
        воронка перестаёт быть воронкой: сделка может уехать дальше по
@@ -298,6 +302,7 @@ const server = http.createServer(async (req, res) => {
         came:     assigned.filter(l => l.st === 'came').length,
         no:       assigned.filter(l => l.st === 'no').length,
         noDate:   arr.filter(l => !l.assigned && l.st === 'came').length,
+        won:      arr.filter(l => l.won).length,
       };
     };
 
@@ -308,10 +313,6 @@ const server = http.createServer(async (req, res) => {
       byManager: CONFIG.MANAGERS.map(m => ({
         id: m.id, name: m.name, ...count(list.filter(l => l.m === m.id)),
       })),
-      bySource: [
-        { id: 'bot',    name: 'Звонобот',        ...count(list.filter(l => l.src === 'bot')) },
-        { id: 'target', name: 'Таргет и прочее', ...count(list.filter(l => l.src === 'target')) },
-      ],
       // Лиды, за которых никто не отвечает из отдела
       other: count(list.filter(l => !l.m)),
     });
