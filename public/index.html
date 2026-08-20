@@ -304,12 +304,16 @@ textarea{resize:vertical;min-height:52px}
   .side.mini .side__nav button{justify-content:flex-start;padding:10px 11px}
   .scrim.on{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:35}
 }
-.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;padding:20px}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;padding:20px 20px 0}
+@media (max-width:1100px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.metrics{grid-template-columns:1fr}}
+.mnote{padding:14px 20px 20px}
 .mcol{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
 .mrow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:11px 14px;border-bottom:1px solid var(--rule-soft)}
 .mrow:last-child{border-bottom:0}
 .mrow span{font-size:13px;color:var(--muted)}
-.mrow b{font-family:"IBM Plex Mono",monospace;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+.mrow b{font-family:"IBM Plex Mono",monospace;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mrow span{min-width:0}
 .mrow.g b{color:var(--green)} .mrow.a b{color:var(--amber)}
 .bar{height:4px;background:var(--rule-soft);margin:0 14px 12px;border-radius:2px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--green);border-radius:2px}
@@ -405,6 +409,10 @@ html[data-theme="dark"] .amo:hover{color:#0D1117}
       <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="6.6" r="3.1"/><path d="M3.8 16.8a6.2 6.2 0 0 1 12.4 0"/></svg>
       <span>Пользователи</span>
     </button>
+    <button data-tab="sheet" aria-pressed="false">
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="2.5" y="3.5" width="15" height="13" rx="1.5"/><path d="M2.5 8h15M7.5 8v8.5M12.5 8v8.5"/></svg>
+      <span>Эффективность</span>
+    </button>
     <button data-tab="calls" aria-pressed="false">
       <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 3.2 8 6.1 6.3 7.9a9 9 0 0 0 5.8 5.8l1.8-1.7 2.9 1.6v3a1.4 1.4 0 0 1-1.5 1.4A14.2 14.2 0 0 1 2.9 4.7 1.4 1.4 0 0 1 4.3 3.2Z"/></svg>
       <span>Звонки</span>
@@ -489,9 +497,15 @@ html[data-theme="dark"] .amo:hover{color:#0D1117}
   <div class="funnel" id="userBox"></div>
 </section>
 
+<section id="sheetView" hidden>
+  <iframe id="sheetFrame" title="Таблица эффективности"
+          style="display:block;width:100%;height:calc(100vh - 57px);border:0"></iframe>
+</section>
+
 <section id="callsView" hidden>
   <div class="stats" id="callStats"></div>
   <div class="metrics" id="metrics"></div>
+  <div class="mnote" id="metricsNote"></div>
 </section>
 
 </div><!-- /.main -->
@@ -748,9 +762,18 @@ function renderCalls(){
       <div class="mrow"><span>Время на линии</span><b>${hhmm(m.talkSec)}</b></div>
       <div class="mrow"><span>Принято входящих</span><b>${m.incoming}</b></div>
       <div class="mrow"><span>Реакция на новый лид</span><b>${dur(m.medResp)}</b></div>
-      ${m.matched ? `<div class="mrow"><span style="font-size:11px">типичная · среднее ${dur(m.avgResp)} · по ${m.matched} лидам</span><b></b></div>` : ''}
-    </section>`).join('') + `
-    <div class="notice" style="grid-column:1/-1;text-align:left">
+      <div class="mrow"><span style="font-size:11px">${
+        m.matched
+          ? `типичная · среднее ${dur(m.avgResp)} · по ${m.matched} лид.` +
+            (m.noCall ? ` · без звонка ${m.noCall}` : '')
+          : (m.newLeads
+              ? `новых лидов ${m.newLeads}, звонка им не было`
+              : 'новых лидов за период не было')
+      }</span><b></b></div>
+    </section>`).join('');
+
+  document.getElementById('metricsNote').innerHTML = `
+    <div class="notice" style="text-align:left">
       «Реакция на новый лид» — сколько прошло от появления сделки в амо до первого исходящего звонка
       этому клиенту. Считается только <b style="display:inline">рабочее время ${w[0]}:00–${w[1]}:00</b>:
       лид, упавший ночью, начинает отсчёт с утра. Крупно показана типичная реакция (медиана) —
@@ -912,6 +935,7 @@ function renderUser(){
           row('Реакция на новый лид', cl ? dur(cl.medResp) : ''),
           (cl && cl.matched) ? row('Среднее (с учётом хвостов)', dur(cl.avgResp)) : '',
           (cl && cl.matched) ? row('Лидов в расчёте', cl.matched) : '',
+          (cl && cl.newLeads) ? row('Новых лидов без звонка', cl.noCall) : '',
         ].join('') : '<div class="empty">Сипуни не подключена</div>'}
       </section>
 
@@ -931,6 +955,11 @@ function setTab(t){
   document.getElementById('callsView').hidden  = t !== 'calls';
   document.getElementById('funnelView').hidden = t !== 'funnel';
   document.getElementById('usersView').hidden  = t !== 'users';
+  document.getElementById('sheetView').hidden  = t !== 'sheet';
+  if(t === 'sheet'){                       // грузим таблицу только при первом открытии
+    const f = document.getElementById('sheetFrame');
+    if(!f.src) f.src = '/table.html';
+  }
   document.getElementById('stats').hidden = t !== 'board';
   document.getElementById('wrap').hidden  = t !== 'board';
   if(t === 'calls'){ renderCalls(); loadCalls(); }
