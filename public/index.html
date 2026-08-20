@@ -368,6 +368,8 @@ html[data-theme="dark"] .amo:hover{color:#0D1117}
 .notice{max-width:820px;margin:0 auto;padding:26px 22px;background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);text-align:center;color:var(--muted)}
 .notice b{color:var(--ink);display:block;margin-bottom:6px;font-size:16px}
 .notice a{color:var(--blue)}
+.notice.warn{border-color:var(--amber);color:var(--ink)}
+.notice.warn b{color:var(--amber)}
 </style>
 </head>
 <body>
@@ -715,6 +717,18 @@ function renderFunnel(){
   if(f.error){ box.innerHTML = `<div class="notice"><b>Не удалось получить данные</b>${f.error}</div>`; return; }
 
   const t = f.total;
+  const line = m => `
+    <tr>
+      <td>${m.name}</td>
+      <td>${m.leads}</td>
+      <td>${m.assigned}</td>
+      <td>${pct(m.assigned, m.leads)}%</td>
+      <td>${m.came}</td>
+      <td>${pct(m.came, m.assigned)}%</td>
+    </tr>`;
+
+  const srcRows = (f.bySource || []).map(line).join('');
+
   const rows = f.byManager.map(m=>`
     <tr>
       <td>${m.name}</td>
@@ -749,6 +763,15 @@ function renderFunnel(){
       </div>
     </div>
 
+    ${srcRows ? `<div class="ftable">
+      <table>
+        <thead><tr>
+          <th>Источник</th><th>Лидов</th><th>Назначено</th><th>Конверсия</th><th>Дошло</th><th>Доходимость</th>
+        </tr></thead>
+        <tbody>${srcRows}</tbody>
+      </table>
+    </div>` : ''}
+
     <div class="ftable">
       <table>
         <thead><tr>
@@ -758,10 +781,16 @@ function renderFunnel(){
       </table>
     </div>
 
+    ${t.noDate ? `<div class="notice warn" style="text-align:left">
+      <b style="display:inline">${t.noDate}</b> сделок продвинулись дальше по воронке, но поле
+      «Дата и Время диагностики» в них не заполнено. В воронку они не попадают и на доске диагностик
+      не видны — стоит попросить менеджеров заполнять дату.
+    </div>` : ''}
+
     <div class="notice" style="text-align:left">
       Считается по <b style="display:inline">дате создания сделки</b>: сколько лидов пришло за период,
-      скольким из них назначили диагностику и сколько в итоге дошло. Диагностика может состояться позже —
-      тогда цифра «дошло» по этим лидам подрастёт задним числом.
+      скольким из них назначили диагностику и сколько из назначенных дошло. Диагностика может состояться
+      позже — тогда цифра «дошло» по этим лидам подрастёт задним числом.
     </div>`;
 }
 
