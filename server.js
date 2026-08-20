@@ -16,7 +16,7 @@ const path = require('path');
 const CONFIG = require('./config');
 const sipuni = require('./sipuni');
 
-const BUILD = '2026-08-20.2';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-20.3';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -129,7 +129,7 @@ function sourceOf(lead) {
 }
 
 /* Лид для воронки: считаем по дате создания сделки, а не встречи */
-function toLead(lead) {
+function toLead(lead, phones) {
   const created = local(lead.created_at);
   if (!created) return null;                            // сделка без даты создания
   const raw = field(lead, CONFIG.DATE_FIELD_ID);
@@ -144,7 +144,48 @@ function toLead(lead) {
     m: columnOf(lead),
     src: sourceOf(lead),
     won: Number(lead.status_id) === Number(CONFIG.WON_STATUS_ID),
+    createdTs: Number(lead.created_at) * 1000,          // для расчёта времени реакции
+    phones: (phones && phones.get(lead.id)) || [],
   };
+}
+
+/* Телефон в сравнимый вид: только последние 10 цифр.
+   +7 701 224 18 90, 8 701 224 18 90 и 7012241890 — это один номер. */
+const normPhone = v => String(v || '').replace(/\D/g, '').slice(-10);
+
+/* Телефоны сделок: амо отдаёт у сделки только ID контактов,
+   поэтому догружаем контакты пачками и собираем номера. */
+async function loadPhones(leads) {
+  const ids = [...new Set(leads.flatMap(l =>
+    ((l._embedded && l._embedded.contacts) || []).map(c => c.id)))];
+  const byContact = new Map();
+
+  for (let i = 0; i < ids.length; i += 250) {
+    const chunk = ids.slice(i, i + 250);
+    const q = new URLSearchParams({ limit: '250' });
+    chunk.forEach(id => q.append('filter[id][]', String(id)));
+    try {
+      const data = await amo('/api/v4/contacts?' + q);
+      for (const c of (data?._embedded?.contacts || [])) {
+        const phones = (c.custom_fields_values || [])
+          .filter(f => f.field_code === 'PHONE')
+          .flatMap(f => (f.values || []).map(v => normPhone(v.value)))
+          .filter(Boolean);
+        if (phones.length) byContact.set(c.id, phones);
+      }
+    } catch (e) {
+      console.error('Не удалось получить контакты:', e.message);
+      break;
+    }
+  }
+
+  const byLead = new Map();
+  for (const l of leads) {
+    const phones = ((l._embedded && l._embedded.contacts) || [])
+      .flatMap(c => byContact.get(c.id) || []);
+    if (phones.length) byLead.set(l.id, [...new Set(phones)]);
+  }
+  return byLead;
 }
 
 /* ── Кэш в памяти ──────────────────────────────────────────── */
@@ -155,16 +196,17 @@ async function refresh() {
   try {
     const leads = [];
     for (let page = 1; page <= 20; page++) {
-      const q = new URLSearchParams({ limit: '250', page: String(page) });
+      const q = new URLSearchParams({ limit: '250', page: String(page), with: 'contacts' });
       if (CONFIG.PIPELINE_ID) q.set('filter[pipeline_id]', String(CONFIG.PIPELINE_ID));
       const data = await amo('/api/v4/leads?' + q);
       const batch = (data && data._embedded && data._embedded.leads) || [];
       leads.push(...batch);
       if (batch.length < 250) break;
     }
+    const phones = await loadPhones(leads);
     cache = {
       items: leads.map(toAppointment).filter(Boolean),
-      leads: leads.map(toLead).filter(Boolean),
+      leads: leads.map(l => toLead(l, phones)).filter(Boolean),
       updatedAt: new Date().toISOString(),
       error: null,
     };
@@ -179,6 +221,61 @@ let pending = null;
 function refreshSoon() {                                 // вебхуки идут пачками — ждём 2 сек
   clearTimeout(pending);
   pending = setTimeout(refresh, 2000);
+}
+
+/* ── Время реакции: сколько прошло от создания сделки до первого
+   исходящего звонка менеджера на телефон этого клиента ────────── */
+async function responseTimes(from, to) {
+  const out = {};
+  for (const m of CONFIG.MANAGERS) out[m.id] = { deltas: [] };
+
+  const calls = await sipuni.rows(from, to);
+  if (!calls.length) return finishResponse(out);
+
+  // Раскладываем звонки: внутренний номер → телефон клиента → отметки времени
+  const byExt = new Map();
+  for (const c of calls) {
+    if (!c.at || !String(c.type).toLowerCase().includes('исход')) continue;
+    const ext = String(c.from || '').replace(/\D/g, '');
+    const client = normPhone(c.to);
+    if (!ext || !client) continue;
+    if (!byExt.has(ext)) byExt.set(ext, new Map());
+    const map = byExt.get(ext);
+    if (!map.has(client)) map.set(client, []);
+    map.get(client).push(c.at);
+  }
+
+  for (const lead of (cache.leads || [])) {
+    if (!lead.m || !lead.phones.length || !lead.createdTs) continue;
+    if (from && (lead.created < from || lead.created > to)) continue;
+
+    const man = CONFIG.MANAGERS.find(x => x.id === lead.m);
+    const map = man && byExt.get(String(man.ext));
+    if (!map) continue;
+
+    // первый звонок этому клиенту после создания сделки
+    let first = null;
+    for (const phone of lead.phones) {
+      for (const at of (map.get(phone) || [])) {
+        if (at >= lead.createdTs && (first === null || at < first)) first = at;
+      }
+    }
+    if (first !== null) out[lead.m].deltas.push((first - lead.createdTs) / 1000);
+  }
+  return finishResponse(out);
+}
+
+function finishResponse(out) {
+  const res = {};
+  for (const [id, v] of Object.entries(out)) {
+    const n = v.deltas.length;
+    res[id] = {
+      avgResp: n ? Math.round(v.deltas.reduce((a, b) => a + b, 0) / n) : null,
+      medResp: n ? Math.round(v.deltas.slice().sort((a, b) => a - b)[Math.floor(n / 2)]) : null,
+      matched: n,
+    };
+  }
+  return res;
 }
 
 /* ── Страница /setup ───────────────────────────────────────── */
@@ -270,12 +367,17 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  // Статистика звонков из Сипуни
+  // Статистика звонков из Сипуни + время реакции на новый лид
   if (url.pathname === '/api/calls') {
     const today = new Date().toISOString().slice(0, 10);
     const from = url.searchParams.get('from') || url.searchParams.get('date') || today;
     const to   = url.searchParams.get('to')   || from;
-    return json(200, await sipuni.stats(from, to));
+    const data = await sipuni.stats(from, to);
+    if (data.enabled) {
+      const resp = await responseTimes(from, to);
+      data.managers = data.managers.map(m => ({ ...m, ...(resp[m.id] || { avgResp: null, matched: 0 }) }));
+    }
+    return json(200, data);
   }
 
   // Сырой CSV — на случай, если цифры разойдутся с кабинетом Сипуни
