@@ -62,6 +62,23 @@ module.exports = {
     // 143: 'no',      // Закрыто и не реализовано
   },
 
+  /* ─── Доступы ────────────────────────────────────────────────
+     Пароли лежат НЕ здесь, а в переменных окружения Railway —
+     в репозитории их быть не должно. Здесь только кто есть кто.
+       admin   — видит всё, правит продажи, читает разбор эффективности
+       manager — видит только себя, продажи только смотрит,
+                 разбор эффективности ему не показывается */
+  USERS: [
+    { login: 'admin',   name: 'Администратор', role: 'admin',   passwordEnv: 'ADMIN_PASSWORD' },
+    { login: 'tair',    name: 'Таир',    role: 'manager', managerId: 'tair',    passwordEnv: 'TAIR_PASSWORD' },
+    { login: 'dulat',   name: 'Дулат',   role: 'manager', managerId: 'dulat',   passwordEnv: 'DULAT_PASSWORD' },
+    { login: 'sanzhar', name: 'Санжар',  role: 'manager', managerId: 'sanzhar', passwordEnv: 'SANZHAR_PASSWORD' },
+    { login: 'dancho',  name: 'Данчо',   role: 'manager', managerId: 'dancho',  passwordEnv: 'DANCHO_PASSWORD' },
+  ],
+
+  // Сколько дней держать вход, прежде чем спросить пароль снова
+  SESSION_DAYS: 30,
+
   // Этап «Успешно реализовано» — считаем его покупкой
   WON_STATUS_ID: 142,
 
