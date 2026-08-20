@@ -734,6 +734,10 @@ function renderFunnel(){
   }
 
   const t = f.total;
+
+  const srcChips = [['','Все'],['target','Таргет и прочее'],['bot','Звонобот']].map(([v,n])=>
+    `<button class="chip" data-src="${v}" aria-pressed="${state.src===v}">${n}</button>`).join('');
+
   const rows = f.byManager.map(m=>`
     <tr>
       <td>${m.name}</td>
