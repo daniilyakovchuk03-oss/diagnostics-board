@@ -74,6 +74,7 @@ function parseCsv(text) {
   };
 
   const idx = {
+    time:     find('время'),
     type:     find('тип'),
     status:   find('статус'),
     from:     find('откуда'),
@@ -87,12 +88,27 @@ function parseCsv(text) {
     const c = cut(l);
     const get = i => (i >= 0 && c[i] !== undefined ? c[i] : '');
     return {
+      time: get(idx.time), at: moment(get(idx.time)),
       type: get(idx.type), status: get(idx.status),
       from: get(idx.from), to: get(idx.to),
       answered: get(idx.answered), talk: get(idx.talk),
     };
   });
   return { header, rows, idx };
+}
+
+/* «20.08.2026 14:05:12» или «2026-08-20 14:05» → отметка времени.
+   Сипуни отдаёт местное время, поэтому подставляем смещение пояса. */
+function moment(v) {
+  const s = String(v || '').trim();
+  if (!s) return 0;
+  const off = CONFIG.TZ_OFFSET || '+00:00';
+  let m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (m) return Date.parse(`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:${m[6] || '00'}${off}`) || 0;
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (m) return Date.parse(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6] || '00'}${off}`) || 0;
+  const n = Number(s);
+  return Number.isFinite(n) && n > 1e9 ? n * 1000 : 0;   // на случай unix-времени
 }
 
 /* «0:01:23» или «83» → секунды */
@@ -167,6 +183,25 @@ async function stats(from, to) {
   }
 }
 
+/* Разобранные строки звонков за период — нужны для расчёта времени реакции */
+const rowsCache = new Map();
+async function rows(from, to) {
+  if (!enabled()) return [];
+  to = to || from;
+  const key = from + '..' + to;
+  const ttl = (CONFIG.CALLS_REFRESH_SEC || 180) * 1000;
+  const hit = rowsCache.get(key);
+  if (hit && Date.now() - hit.at < ttl) return hit.data;
+  try {
+    const { rows: list } = parseCsv(await fetchCsv(from, to));
+    rowsCache.set(key, { data: list, at: Date.now() });
+    return list;
+  } catch (e) {
+    console.error('Сипуни, строки звонков:', e.message);
+    return [];
+  }
+}
+
 /* Первые строки CSV — чтобы сверить разбор колонок, если цифры разойдутся */
 async function raw(date) {
   if (!enabled()) return 'Не заданы SIPUNI_USER и SIPUNI_SECRET';
@@ -180,4 +215,4 @@ async function raw(date) {
   ].join('\n');
 }
 
-module.exports = { stats, raw, enabled, parseCsv, seconds, aggregate };
+module.exports = { stats, raw, rows, enabled, parseCsv, seconds, aggregate, moment };
