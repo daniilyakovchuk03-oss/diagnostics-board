@@ -214,14 +214,62 @@ async function load(from, to) {
   return task;
 }
 
-async function stats(from, to) {
-  if (!enabled()) return { enabled: false, managers: [], error: null, updatedAt: null };
-  return (await load(from, to)).stats;
+/* ── Выгрузка месяцами ─────────────────────────────────────────
+   Раньше каждый выбранный день был отдельным обращением к Сипуни,
+   поэтому листание дней упиралось в сеть. Теперь берём месяц целиком
+   и режем нужный отрезок у себя — переключение дней внутри месяца
+   становится мгновенным, а запросов к Сипуни в разы меньше. */
+
+const monthsBetween = (from, to) => {
+  const out = [];
+  let [y, m] = from.split('-').map(Number);
+  const [ly, lm] = to.split('-').map(Number);
+  while (y < ly || (y === ly && m <= lm)) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`);
+    if (++m > 12) { m = 1; y++; }
+    if (out.length > 24) break;                 // страховка от бесконечного цикла
+  }
+  return out;
+};
+
+const monthEdges = ym => {
+  const [y, m] = ym.split('-').map(Number);
+  return [`${ym}-01`, `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`];
+};
+
+/* Отбираем строки нужного отрезка по времени звонка */
+function slice(list, from, to) {
+  const start = Date.parse(from + 'T00:00:00' + (CONFIG.TZ_OFFSET || '+00:00'));
+  const end   = Date.parse(to   + 'T23:59:59' + (CONFIG.TZ_OFFSET || '+00:00'));
+  return list.filter(r => r.at ? (r.at >= start && r.at <= end) : true);
 }
 
 async function rows(from, to) {
   if (!enabled()) return [];
-  return (await load(from, to)).rows;
+  to = to || from;
+  const months = monthsBetween(from, to);
+  const all = [];
+  for (const ym of months) {
+    const [a, b] = monthEdges(ym);
+    all.push(...(await load(a, b)).rows);
+  }
+  // если время звонка не разобралось, отрезок не сузить — отдаём как есть
+  return all.some(r => r.at) ? slice(all, from, to) : all;
+}
+
+async function stats(from, to) {
+  if (!enabled()) return { enabled: false, managers: [], error: null, updatedAt: null };
+  to = to || from;
+  const list = await rows(from, to);
+  const [a] = monthEdges(monthsBetween(from, to)[0]);
+  const entry = cache.get(a + '..' + monthEdges(monthsBetween(from, to)[0])[1]);
+  return {
+    enabled: true,
+    managers: aggregate(list),
+    total: list.length,
+    error: entry && entry.stats ? entry.stats.error : null,
+    updatedAt: entry ? new Date(entry.at).toISOString() : new Date().toISOString(),
+  };
 }
 
 /* Первые строки CSV — чтобы сверить разбор колонок, если цифры разойдутся */
