@@ -270,6 +270,10 @@ textarea{resize:vertical;min-height:52px}
 .side__foot{padding:10px;border-top:1px solid var(--rule-soft)}
 .acc{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:9px;overflow:hidden}
 .acc:hover{background:var(--hover)}
+.logout{background:none;border:0;color:var(--muted);cursor:pointer;padding:4px;border-radius:6px;
+  display:grid;place-items:center;flex:0 0 auto;margin-left:auto}
+.logout:hover{color:var(--red);background:var(--hover)}
+.side.mini .logout{display:none}
 .acc__ava{
   flex:0 0 32px;height:32px;border-radius:8px;background:var(--blue);color:#fff;
   display:grid;place-items:center;font-weight:600;font-size:14px;
@@ -419,9 +423,12 @@ html[data-theme="dark"] .amo:hover{color:#0D1117}
     </button>
   </nav>
   <div class="side__foot">
-    <div class="acc" title="Аккаунт администратора">
-      <div class="acc__ava">А</div>
-      <div class="acc__txt"><b>Администратор</b><span>Полный доступ</span></div>
+    <div class="acc" id="acc" title="Аккаунт">
+      <div class="acc__ava" id="accAva">·</div>
+      <div class="acc__txt"><b id="accName">…</b><span id="accRole"></span></div>
+      <button class="logout" id="logout" title="Выйти" aria-label="Выйти">
+        <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 17H4.5a1.5 1.5 0 0 1-1.5-1.5v-11A1.5 1.5 0 0 1 4.5 3H8M13 13.5 16.5 10 13 6.5M16.5 10H7.5"/></svg>
+      </button>
     </div>
   </div>
 </aside>
@@ -534,7 +541,7 @@ const daysBetween = (a,b) => Math.round((dateOf(b)-dateOf(a))/86400000);
 
 const state = { from:isoOf(today), to:isoOf(today), items:[], filter:'all', mk:null, view:'board',
                 mkEnabled:false, configured:false, updatedAt:null, failed:false,
-                tab:'board', calls:null, funnel:null, src:'', user:null, busy:false };
+                tab:'board', calls:null, funnel:null, src:'', user:null, busy:false, me:null };
 const isRange = () => state.from !== state.to;
 
 
@@ -553,6 +560,7 @@ async function getJSON(url, ms = 15000){
   const timer = setTimeout(()=> stop.abort(), ms);
   try{
     const r = await fetch(url, { signal: stop.signal });
+    if(r.status === 401){ location.href = '/login.html'; throw new Error('Нужен вход'); }
     if(!r.ok) throw new Error('Сервер ответил ' + r.status);
     return await r.json();
   } catch(e){
@@ -560,10 +568,30 @@ async function getJSON(url, ms = 15000){
   } finally { clearTimeout(timer); }
 }
 
+/* Настраиваем интерфейс под роль. Данные и так режутся на сервере,
+   здесь только прячем то, что менеджеру ни к чему. */
+function applyRole(){
+  const me = state.me;
+  if(!me) return;
+  document.getElementById('accName').textContent = me.name;
+  document.getElementById('accRole').textContent = me.role === 'admin' ? 'Полный доступ' : 'Свои показатели';
+  document.getElementById('accAva').textContent = (me.name || '?').trim()[0].toUpperCase();
+  // менеджеру список пользователей не нужен — он там один
+  const usersTab = document.querySelector('.side__nav button[data-tab="users"]');
+  if(usersTab) usersTab.hidden = me.role !== 'admin';
+}
+
+document.getElementById('logout').onclick = async () => {
+  await fetch('/api/logout');
+  location.href = '/login.html';
+};
+
 /* ── Загрузка ─────────────────────────────────────────────── */
 async function loadConfig(){
   try{
     const c = await getJSON('/api/config');
+    state.me = c.me || null;
+    applyRole();
     MANAGERS = c.managers; state.mkEnabled = c.mkEnabled; state.configured = c.configured;
     state.amoDomain = c.amoDomain || '';
     state.work = c.work || [10,19];
