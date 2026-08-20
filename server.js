@@ -16,7 +16,7 @@ const path = require('path');
 const CONFIG = require('./config');
 const sipuni = require('./sipuni');
 
-const BUILD = '2026-08-20.3';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-20.4';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -223,6 +223,36 @@ function refreshSoon() {                                 // вебхуки ид�
   pending = setTimeout(refresh, 2000);
 }
 
+/* Сколько РАБОЧЕГО времени прошло между двумя моментами.
+   Ночь и время после закрытия отдела не считаются: лид, упавший в 23:40,
+   начинает «тикать» с 10:00 следующего дня. */
+const DAY = 86400000;
+function workSeconds(startTs, endTs) {
+  if (!(endTs > startTs)) return 0;
+
+  const offset = (() => {                       // '+05:00' → миллисекунды
+    const m = String(CONFIG.TZ_OFFSET || '+00:00').match(/([+-])(\d{2}):(\d{2})/);
+    if (!m) return 0;
+    return (m[1] === '-' ? -1 : 1) * ((+m[2]) * 3600 + (+m[3]) * 60) * 1000;
+  })();
+
+  const from = CONFIG.WORK_FROM * 3600000;
+  const to   = CONFIG.WORK_TO   * 3600000;
+  if (!(to > from)) return Math.round((endTs - startTs) / 1000);
+
+  // переводим в местное время, чтобы сутки резались по местной полуночи
+  let a = startTs + offset, b = endTs + offset, total = 0;
+  const firstDay = Math.floor(a / DAY), lastDay = Math.floor(b / DAY);
+  if (lastDay - firstDay > 90) return Math.round((endTs - startTs) / 1000);  // защита от бесконечного цикла
+
+  for (let d = firstDay; d <= lastDay; d++) {
+    const open = d * DAY + from, close = d * DAY + to;
+    const s = Math.max(a, open), e = Math.min(b, close);
+    if (e > s) total += e - s;
+  }
+  return Math.round(total / 1000);
+}
+
 /* ── Время реакции: сколько прошло от создания сделки до первого
    исходящего звонка менеджера на телефон этого клиента ────────── */
 async function responseTimes(from, to) {
@@ -245,9 +275,14 @@ async function responseTimes(from, to) {
     map.get(client).push(c.at);
   }
 
+  /* Берём и лиды, созданные накануне: заявка упала ночью, звонок был утром —
+     такую пару обязательно нужно учесть, иначе ночные лиды выпадают. */
+  const earliest = from ? new Date(from + 'T00:00:00Z').getTime() - DAY : 0;
+
   for (const lead of (cache.leads || [])) {
     if (!lead.m || !lead.phones.length || !lead.createdTs) continue;
-    if (from && (lead.created < from || lead.created > to)) continue;
+    if (earliest && lead.createdTs < earliest) continue;
+    if (to && lead.created > to) continue;
 
     const man = CONFIG.MANAGERS.find(x => x.id === lead.m);
     const map = man && byExt.get(String(man.ext));
@@ -260,7 +295,7 @@ async function responseTimes(from, to) {
         if (at >= lead.createdTs && (first === null || at < first)) first = at;
       }
     }
-    if (first !== null) out[lead.m].deltas.push((first - lead.createdTs) / 1000);
+    if (first !== null) out[lead.m].deltas.push(workSeconds(lead.createdTs, first));
   }
   return finishResponse(out);
 }
@@ -364,6 +399,7 @@ const server = http.createServer(async (req, res) => {
       configured: Boolean(CONFIG.DATE_FIELD_ID),
       callsEnabled: sipuni.enabled(),
       amoDomain: DOMAIN,
+      work: [CONFIG.WORK_FROM, CONFIG.WORK_TO],
     });
   }
 
