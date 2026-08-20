@@ -16,6 +16,8 @@ const path = require('path');
 const CONFIG = require('./config');
 const sipuni = require('./sipuni');
 
+const BUILD = '2026-08-20.1';   // меняется с каждой правкой — видно в /health
+
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
 const PORT   = process.env.PORT || 3000;
@@ -42,13 +44,16 @@ function field(lead, id) {
   return f && f.values && f.values[0] ? f.values[0].value : undefined;
 }
 
-// Переводим unix-время из амо в местные дату и время
+// Переводим unix-время из амо в местные дату и время.
+// Возвращаем null на пустом или битом значении — раньше это роняло всю выгрузку.
 function local(ts) {
+  const n = Number(ts);
+  if (!n || !Number.isFinite(n)) return null;
   const s = new Intl.DateTimeFormat('sv-SE', {
     timeZone: CONFIG.TIMEZONE,
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(new Date(ts * 1000));
+  }).format(new Date(n * 1000));
   return { date: s.slice(0, 10), time: s.slice(11, 16) };
 }
 
@@ -69,6 +74,7 @@ function toAppointment(lead) {
   if (!ts) return null;
 
   const when = local(ts);
+  if (!when) return null;                               // битая дата диагностики
   const col  = columnOf(lead);
   if (!col) return null;                                // ответственный не из нашего отдела
 
@@ -124,7 +130,8 @@ function sourceOf(lead) {
 
 /* Лид для воронки: считаем по дате создания сделки, а не встречи */
 function toLead(lead) {
-  const created = local(Number(lead.created_at));
+  const created = local(lead.created_at);
+  if (!created) return null;                            // сделка без даты создания
   const raw = field(lead, CONFIG.DATE_FIELD_ID);
   const st = statusOf(lead);
   return {
@@ -155,7 +162,7 @@ async function refresh() {
     }
     cache = {
       items: leads.map(toAppointment).filter(Boolean),
-      leads: leads.map(toLead),
+      leads: leads.map(toLead).filter(Boolean),
       updatedAt: new Date().toISOString(),
       error: null,
     };
@@ -233,8 +240,14 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': '
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
-  const send = (code, type, body) => { res.writeHead(code, { 'Content-Type': type }); res.end(body); };
+  const send = (code, type, body) => {
+    if (res.writableEnded) return;
+    res.writeHead(code, { 'Content-Type': type });
+    res.end(body);
+  };
   const json = (code, obj) => send(code, 'application/json; charset=utf-8', JSON.stringify(obj));
+
+  try {
 
   // Вебхук из амо: отвечаем сразу, разбираемся потом
   if (url.pathname === '/amo/hook') {
@@ -277,7 +290,7 @@ const server = http.createServer(async (req, res) => {
       updatedAt: cache.updatedAt,
       error: cache.error,
       // Даты в формате YYYY-MM-DD сравниваются как строки корректно
-      items: cache.items.filter(x => !from || (x.date >= from && x.date <= to)),
+      items: (cache.items || []).filter(x => !from || (x.date >= from && x.date <= to)),
     });
   }
 
@@ -286,7 +299,7 @@ const server = http.createServer(async (req, res) => {
     const from = url.searchParams.get('from');
     const to   = url.searchParams.get('to') || from;
     const src  = url.searchParams.get('src');   // bot | target | пусто = все
-    const list = cache.leads.filter(l =>
+    const list = (cache.leads || []).filter(l =>
       (!from || (l.created >= from && l.created <= to)) &&
       (!src || l.src === src));
 
@@ -320,7 +333,13 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/setup') return send(200, MIME['.html'], await setupPage());
 
-  if (url.pathname === '/health') return json(200, { ok: true, items: cache.items.length, updatedAt: cache.updatedAt });
+  if (url.pathname === '/health') return json(200, {
+    ok: true, build: BUILD,
+    items: (cache.items || []).length,
+    leads: (cache.leads || []).length,
+    stages: Object.keys(stageOrder).length,
+    updatedAt: cache.updatedAt, error: cache.error,
+  });
 
   // Статика доски
   const file = url.pathname === '/' ? 'index.html' : url.pathname.replace(/^\//, '');
@@ -329,6 +348,12 @@ const server = http.createServer(async (req, res) => {
     if (err) return send(404, 'text/plain; charset=utf-8', 'Не найдено');
     send(200, MIME[path.extname(full)] || 'application/octet-stream', data);
   });
+
+  } catch (e) {
+    // Без этого любая ошибка оставляла запрос висеть, и доска грузилась вечно
+    console.error('Ошибка в обработчике', url.pathname, '→', e.stack || e.message);
+    json(500, { error: e.message, where: url.pathname });
+  }
 });
 
 server.listen(PORT, async () => {
