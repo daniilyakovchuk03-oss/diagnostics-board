@@ -183,10 +183,13 @@ tr.sum td{font-weight:600;background:var(--gtime-bg)}
 <div class="wrap2" id="salesWrap"></div>
 
 <div class="note">
-  Вписывать нужно только продажи — остальные цифры подтягиваются сами: диагностики из amoCRM,
-  звонки и время реакции из Сипуни. Эффективность считается как среднее по пяти показателям,
-  у каждого свой ориентир. Нажмите <b>«Почему такая цифра»</b> у любого менеджера,
-  чтобы увидеть разбор и что конкретно делать.
+  <span id="noteAdmin" hidden>Вписывать нужно только продажи — остальные цифры подтягиваются сами:
+  диагностики из amoCRM, звонки и время реакции из Сипуни. Эффективность считается как среднее
+  по пяти показателям, у каждого свой ориентир. Нажмите <b>«Почему такая цифра»</b> у любого
+  менеджера, чтобы увидеть разбор и что конкретно делать.</span>
+  <span id="noteUser" hidden>Цифры считаются автоматически: диагностики из amoCRM, звонки и время
+  реакции из Сипуни. Под каждой полосой указан ориентир, к которому нужно стремиться.
+  За разбором показателей и планом действий обратитесь к руководителю.</span>
 </div>
 
 <script>
@@ -219,7 +222,7 @@ const SK = '<span class="skel">—</span>';
 const today = new Date();
 const state = {
   ym: `${today.getFullYear()}-${pad(today.getMonth() + 1)}`,
-  managers: [], funnel: null, calls: null,
+  managers: [], funnel: null, calls: null, me: null,
   sales: {},           // { идентификатор менеджера: [по дням] }
   open: null,          // у кого раскрыт разбор
 };
@@ -260,6 +263,7 @@ async function loadAll() {
   try {
     const cfg = await getJSON('/api/config');
     state.managers = cfg.managers || [];
+    state.me = cfg.me || null;
   } catch (e) { console.error('Настройки:', e.message); }
 
   // продажи из общего хранилища
@@ -294,6 +298,8 @@ function saveSales() {
     } catch (e) { console.error('Сохранение:', e.message); }
   }, 600);
 }
+
+const isAdmin = () => !state.me || state.me.role === 'admin';
 
 /* ── Показатели одного менеджера ──────────────────────────────── */
 function metricsOf(id) {
@@ -391,6 +397,8 @@ function advice(m, sc) {
 
 /* ── Отрисовка ────────────────────────────────────────────────── */
 function render() {
+  document.getElementById('noteAdmin').hidden = !isAdmin();
+  document.getElementById('noteUser').hidden  = isAdmin();
   const [y, m] = ymParts();
   document.getElementById('monthLabel').textContent = MNAMES[m - 1] + ' ' + y;
   renderCards();
@@ -418,7 +426,7 @@ function renderCards() {
           <div class="bar2__hint">ориентир ${GOALS[p.key].target}${p.key === 'speed' ? ' мин' : (p.key === 'activity' ? ' в день' : '%')}</div>
         </div>`).join('');
 
-    const adv = (opened && m) ? `<div class="advice">${advice(m, sc).map(a => `
+    const adv = (opened && m && isAdmin()) ? `<div class="advice">${advice(m, sc).map(a => `
         <div class="adv ${a.level}"><b>${a.title}</b><span>${a.text}</span></div>`).join('')}</div>` : '';
 
     return `
@@ -431,11 +439,11 @@ function renderCards() {
         </div>
         <div class="bars">${bars}</div>
         ${adv}
-        <div class="card2__foot">
+        ${isAdmin() ? `<div class="card2__foot">
           <button class="why" data-why="${man.id}" aria-expanded="${opened}">
             ${opened ? 'Свернуть разбор' : 'Почему такая цифра'}
           </button>
-        </div>
+        </div>` : ''}
       </section>`;
   }).join('');
 }
@@ -452,6 +460,7 @@ function renderSales() {
     for (let d = 1; d <= n; d++) {
       cells.push(`<td class="${isWeekend(d) ? 'wknd' : ''}">
         <input type="number" inputmode="numeric" data-man="${man.id}" data-day="${d}"
+               ${isAdmin() ? '' : 'readonly tabindex="-1"'}
                value="${arr[d - 1] != null ? arr[d - 1] : ''}"></td>`);
     }
     const sum = arr.reduce((a, b) => a + (Number(b) || 0), 0);
@@ -486,7 +495,7 @@ document.addEventListener('click', e => {
 
 document.addEventListener('input', e => {
   const i = e.target.closest('input[data-man]');
-  if (!i) return;
+  if (!i || !isAdmin()) return;               // менеджер продажи не правит
   const id = i.dataset.man, day = Number(i.dataset.day);
   if (!state.sales[id]) state.sales[id] = [];
   state.sales[id][day - 1] = i.value === '' ? '' : Number(i.value);
