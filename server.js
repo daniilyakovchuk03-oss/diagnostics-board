@@ -110,7 +110,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-20.8';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-20.9';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -523,6 +523,8 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/config') {
     return json(200, {
       managers: mineOnly(CONFIG.MANAGERS.map(m => ({ id: m.id, name: m.name })), user, 'id'),
+      // Полный состав отдела: нужен там, где цифры общие (продажи, воронка)
+      allManagers: CONFIG.MANAGERS.map(m => ({ id: m.id, name: m.name })),
       me: { name: user.name, role: user.role, managerId: user.managerId || null },
       mkEnabled: CONFIG.MK_ENABLED,
       configured: Boolean(CONFIG.DATE_FIELD_ID),
@@ -590,19 +592,16 @@ const server = http.createServer(async (req, res) => {
       };
     };
 
-    // Менеджеру показываем воронку только по нему: и в карточках, и в таблице
-    const own = isAdmin(user) ? null : user.managerId;
-    const scoped = own ? list.filter(l => l.m === own) : list;
-
+    /* Воронка общая для всех: сколько лидов пришло на отдел и как они
+       распределились. Это командные цифры, менеджеру полезно их видеть. */
     return json(200, {
       updatedAt: cache.updatedAt,
       error: cache.error,
-      total: count(scoped),
-      byManager: mineOnly(CONFIG.MANAGERS.map(m => ({
+      total: count(list),
+      byManager: CONFIG.MANAGERS.map(m => ({
         id: m.id, name: m.name, ...count(list.filter(l => l.m === m.id)),
-      })), user, 'id'),
-      // Лиды без ответственного — только руководителю
-      other: isAdmin(user) ? count(list.filter(l => !l.m)) : null,
+      })),
+      other: count(list.filter(l => !l.m)),
     });
   }
 
