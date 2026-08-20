@@ -152,54 +152,76 @@ function aggregate(rows) {
   });
 }
 
-/* ── Кэш по датам ──────────────────────────────────────────── */
-const cache = new Map();   // date → { data, at }
+/* ── Кэш и очередь запросов ────────────────────────────────────
+   Сипуни ограничивает частоту обращений и отвечает 429, если дёргать
+   её часто. Поэтому: одна выгрузка на период (а не отдельно ради
+   статистики и ради времени реакции), склейка одновременных запросов
+   и мягкий повтор при отказе. */
 
-async function stats(from, to) {
-  if (!enabled()) return { enabled: false, managers: [], error: null, updatedAt: null };
-  to = to || from;
+const cache = new Map();      // период → { at, rows, stats }
+const inflight = new Map();   // период → незавершённый запрос
 
-  const ttl = (CONFIG.CALLS_REFRESH_SEC || 180) * 1000;
-  const key = from + '..' + to;
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < ttl) return hit.data;
+const todayStr = () => new Date().toISOString().slice(0, 10);
 
-  try {
-    const csv = await fetchCsv(from, to);
-    const { rows } = parseCsv(csv);
-    const data = {
-      enabled: true,
-      managers: aggregate(rows),
-      total: rows.length,
-      error: null,
-      updatedAt: new Date().toISOString(),
-    };
-    cache.set(key, { data, at: Date.now() });
-    return data;
-  } catch (e) {
-    const data = { enabled: true, managers: [], error: e.message, updatedAt: null };
-    cache.set(key, { data, at: Date.now() });
-    return data;
+/* Прошедшие дни уже не меняются — их держим намного дольше */
+const ttlFor = to => (to < todayStr() ? 12 * 3600 * 1000 : (CONFIG.CALLS_REFRESH_SEC || 180) * 1000);
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function fetchCsvRetry(from, to, tries = 3) {
+  for (let i = 1; i <= tries; i++) {
+    try {
+      return await fetchCsv(from, to);
+    } catch (e) {
+      const busy = /429/.test(e.message);
+      if (!busy || i === tries) throw e;
+      await sleep(1500 * i);                 // 1.5 с, затем 3 с
+    }
   }
 }
 
-/* Разобранные строки звонков за период — нужны для расчёта времени реакции */
-const rowsCache = new Map();
-async function rows(from, to) {
-  if (!enabled()) return [];
+async function load(from, to) {
   to = to || from;
   const key = from + '..' + to;
-  const ttl = (CONFIG.CALLS_REFRESH_SEC || 180) * 1000;
-  const hit = rowsCache.get(key);
-  if (hit && Date.now() - hit.at < ttl) return hit.data;
-  try {
-    const { rows: list } = parseCsv(await fetchCsv(from, to));
-    rowsCache.set(key, { data: list, at: Date.now() });
-    return list;
-  } catch (e) {
-    console.error('Сипуни, строки звонков:', e.message);
-    return [];
-  }
+
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < ttlFor(to)) return hit;
+  if (inflight.has(key)) return inflight.get(key);      // уже спрашиваем — подождём тот же ответ
+
+  const task = (async () => {
+    try {
+      const { rows } = parseCsv(await fetchCsvRetry(from, to));
+      const entry = {
+        at: Date.now(), rows,
+        stats: {
+          enabled: true, managers: aggregate(rows), total: rows.length,
+          error: null, updatedAt: new Date().toISOString(),
+        },
+      };
+      cache.set(key, entry);
+      return entry;
+    } catch (e) {
+      console.error('Сипуни:', e.message);
+      const stale = cache.get(key);
+      if (stale) return stale;                           // лучше прошлые данные, чем пустой экран
+      return { at: 0, rows: [], stats: { enabled: true, managers: [], error: e.message, updatedAt: null } };
+    } finally {
+      inflight.delete(key);
+    }
+  })();
+
+  inflight.set(key, task);
+  return task;
+}
+
+async function stats(from, to) {
+  if (!enabled()) return { enabled: false, managers: [], error: null, updatedAt: null };
+  return (await load(from, to)).stats;
+}
+
+async function rows(from, to) {
+  if (!enabled()) return [];
+  return (await load(from, to)).rows;
 }
 
 /* Первые строки CSV — чтобы сверить разбор колонок, если цифры разойдутся */
