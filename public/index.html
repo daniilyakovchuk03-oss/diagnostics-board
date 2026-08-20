@@ -351,6 +351,7 @@ html[data-theme="dark"] .amo:hover{color:#0D1117}
 .fstep span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
 .fstep em{display:block;margin-top:7px;font-style:normal;font-size:12px;color:var(--muted)}
 .fstep.g b{color:var(--green)} .fstep.a b{color:var(--amber)} .fstep.r b{color:var(--red)}
+.fstep.blue b{color:var(--blue)}
 .ftable{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);overflow:auto;box-shadow:var(--shadow)}
 .ftable table{border-collapse:collapse;width:100%;min-width:520px}
 .ftable th,.ftable td{padding:11px 14px;text-align:right;border-bottom:1px solid var(--rule-soft);font-size:14px}
@@ -502,7 +503,7 @@ const daysBetween = (a,b) => Math.round((dateOf(b)-dateOf(a))/86400000);
 
 const state = { from:isoOf(today), to:isoOf(today), items:[], filter:'all', mk:null, view:'board',
                 mkEnabled:false, configured:false, updatedAt:null, failed:false,
-                tab:'board', calls:null, funnel:null };
+                tab:'board', calls:null, funnel:null, src:'' };
 const isRange = () => state.from !== state.to;
 
 
@@ -705,7 +706,8 @@ const pct = (a,b) => b ? Math.round(a/b*100) : 0;
 async function loadFunnel(){
   if(state.tab !== 'funnel') return;
   try{
-    const r = await fetch(`/api/funnel?from=${state.from}&to=${state.to}`);
+    const q = state.src ? '&src=' + state.src : '';
+    const r = await fetch(`/api/funnel?from=${state.from}&to=${state.to}${q}`);
     state.funnel = await r.json();
   }catch(e){ state.funnel = {error:'Нет связи с сервером'}; }
   renderFunnel();
@@ -717,18 +719,6 @@ function renderFunnel(){
   if(f.error){ box.innerHTML = `<div class="notice"><b>Не удалось получить данные</b>${f.error}</div>`; return; }
 
   const t = f.total;
-  const line = m => `
-    <tr>
-      <td>${m.name}</td>
-      <td>${m.leads}</td>
-      <td>${m.assigned}</td>
-      <td>${pct(m.assigned, m.leads)}%</td>
-      <td>${m.came}</td>
-      <td>${pct(m.came, m.assigned)}%</td>
-    </tr>`;
-
-  const srcRows = (f.bySource || []).map(line).join('');
-
   const rows = f.byManager.map(m=>`
     <tr>
       <td>${m.name}</td>
@@ -737,13 +727,16 @@ function renderFunnel(){
       <td>${pct(m.assigned, m.leads)}%</td>
       <td>${m.came}</td>
       <td>${pct(m.came, m.assigned)}%</td>
+      <td>${m.won}</td>
     </tr>`).join('');
 
   const other = f.other && f.other.leads
-    ? `<tr class="dim"><td>Без ответственного из отдела</td><td>${f.other.leads}</td><td>${f.other.assigned}</td><td>${pct(f.other.assigned,f.other.leads)}%</td><td>${f.other.came}</td><td>${pct(f.other.came,f.other.assigned)}%</td></tr>`
+    ? `<tr class="dim"><td>Без ответственного из отдела</td><td>${f.other.leads}</td><td>${f.other.assigned}</td><td>${pct(f.other.assigned,f.other.leads)}%</td><td>${f.other.came}</td><td>${pct(f.other.came,f.other.assigned)}%</td><td>${f.other.won}</td></tr>`
     : '';
 
   box.innerHTML = `
+    <div class="controls" style="padding:0">${srcChips}</div>
+
     <div class="fsteps">
       <div class="fstep">
         <span>Пришло лидов</span><b>${t.leads}</b>
@@ -761,21 +754,16 @@ function renderFunnel(){
         <span>Не дошло</span><b>${t.no}</b>
         <em>${pct(t.no, t.assigned)}% от назначенных</em>
       </div>
+      <div class="fstep blue">
+        <span>Купили</span><b>${t.won}</b>
+        <em>${pct(t.won, t.came)}% от дошедших · ${pct(t.won, t.leads)}% от лидов</em>
+      </div>
     </div>
-
-    ${srcRows ? `<div class="ftable">
-      <table>
-        <thead><tr>
-          <th>Источник</th><th>Лидов</th><th>Назначено</th><th>Конверсия</th><th>Дошло</th><th>Доходимость</th>
-        </tr></thead>
-        <tbody>${srcRows}</tbody>
-      </table>
-    </div>` : ''}
 
     <div class="ftable">
       <table>
         <thead><tr>
-          <th>Менеджер</th><th>Лидов</th><th>Назначено</th><th>Конверсия</th><th>Дошло</th><th>Доходимость</th>
+          <th>Менеджер</th><th>Лидов</th><th>Назначено</th><th>Конверсия</th><th>Дошло</th><th>Доходимость</th><th>Купили</th>
         </tr></thead>
         <tbody>${rows}${other}</tbody>
       </table>
@@ -821,6 +809,8 @@ scrim.onclick = closeSide;
 
 /* ── События ──────────────────────────────────────────────── */
 document.addEventListener('click', e=>{
+  const sc = e.target.closest('.chip[data-src]');
+  if(sc){ state.src = sc.dataset.src; state.funnel = null; renderFunnel(); loadFunnel(); return; }
   const chip = e.target.closest('.chip[data-filter]');
   if(chip){
     state.filter = chip.dataset.filter;
