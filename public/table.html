@@ -155,6 +155,14 @@ td input:focus{background:var(--hover);outline:2px solid var(--blue);outline-off
 td input::-webkit-outer-spin-button,td input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 tr.sum td{font-weight:600;background:var(--gtime-bg)}
 
+.totals{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);
+  box-shadow:var(--shadow);padding:4px 16px;margin-bottom:18px;
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 24px}
+.totals .mrow{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  padding:11px 0;border-bottom:1px solid var(--rule-soft);font-size:13px}
+.totals .mrow b{font-family:"IBM Plex Mono",monospace;font-size:17px;font-weight:600;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.totals .mrow.tot b{color:var(--green)}
 .note{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);
   padding:14px 16px;font-size:13px;color:var(--muted);line-height:1.6;margin-top:14px}
 .note b{color:var(--ink)}
@@ -178,6 +186,9 @@ tr.sum td{font-weight:600;background:var(--gtime-bg)}
 
 <h2>Эффективность менеджеров</h2>
 <div class="cards" id="cards"></div>
+
+<h2>Продажи за месяц</h2>
+<div class="totals" id="salesTotals"></div>
 
 <h2>Продажи по дням, ₸</h2>
 <div class="wrap2" id="salesWrap"></div>
@@ -222,7 +233,7 @@ const SK = '<span class="skel">—</span>';
 const today = new Date();
 const state = {
   ym: `${today.getFullYear()}-${pad(today.getMonth() + 1)}`,
-  managers: [], funnel: null, calls: null, me: null,
+  managers: [], allManagers: [], funnel: null, calls: null, me: null,
   sales: {},           // { идентификатор менеджера: [по дням] }
   open: null,          // у кого раскрыт разбор
 };
@@ -263,6 +274,7 @@ async function loadAll() {
   try {
     const cfg = await getJSON('/api/config');
     state.managers = cfg.managers || [];
+    state.allManagers = cfg.allManagers || cfg.managers || [];
     state.me = cfg.me || null;
   } catch (e) { console.error('Настройки:', e.message); }
 
@@ -449,12 +461,13 @@ function renderCards() {
 }
 
 function renderSales() {
+  const team = state.allManagers;          // продажи показываем по всему отделу
   const n = daysInMonth();
   const head = ['<th class="name">Менеджер</th>'];
   for (let d = 1; d <= n; d++) head.push(`<th class="${isWeekend(d) ? 'wknd' : ''}">${d}</th>`);
   head.push('<th>Итого</th>');
 
-  const rows = state.managers.map(man => {
+  const rows = team.map(man => {
     const arr = state.sales[man.id] || [];
     const cells = [];
     for (let d = 1; d <= n; d++) {
@@ -472,10 +485,20 @@ function renderSales() {
   let grand = 0;
   for (let d = 1; d <= n; d++) {
     let s = 0;
-    for (const man of state.managers) s += Number((state.sales[man.id] || [])[d - 1]) || 0;
+    for (const man of team) s += Number((state.sales[man.id] || [])[d - 1]) || 0;
     grand += s;
     totals.push(`<td class="${isWeekend(d) ? 'wknd' : ''}">${s ? money(s) : ''}</td>`);
   }
+
+  // итог месяца по каждому — рядом с таблицей, чтобы не листать
+  const byMan = team.map(man => {
+    const sum = (state.sales[man.id] || []).reduce((a, b) => a + (Number(b) || 0), 0);
+    return `<div class="mrow"><span>${man.name}</span><b>${money(sum)} ₸</b></div>`;
+  }).join('');
+  const teamSum = team.reduce((a, man) =>
+    a + (state.sales[man.id] || []).reduce((x, b) => x + (Number(b) || 0), 0), 0);
+  document.getElementById('salesTotals').innerHTML =
+    byMan + `<div class="mrow tot"><span>Всего по команде</span><b>${money(teamSum)} ₸</b></div>`;
 
   document.getElementById('salesWrap').innerHTML = `
     <table>
