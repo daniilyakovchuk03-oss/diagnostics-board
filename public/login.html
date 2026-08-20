@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Вход — NeAdPulse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+
+:root{
+  --paper:#E9EDEB;
+  --panel:#FFFFFF;
+  --frame:#333B38;
+  --frame-lit:#4C5652;
+  --ink:#12171A;
+  --muted:#6B7670;
+  --rule:#CBD4D0;
+  --rule-soft:#E2E8E5;
+
+  --green:#0F7A45;
+  --red:#C3271E;
+  --blue:#1F4FD0;
+  --amber:#B05806;
+  --lime:#7B9E2E;
+
+  --card-bg:#FFFFFF;
+  --card-came:#F4FAF6;
+  --card-no:#FCF5F4;
+  --card-moved:#FDF8F2;
+  --hover:#F3F6F4;
+  --gtime-bg:#FAFBFA;
+  --input-bg:#FFFFFF;
+  --ring:rgba(31,79,208,.14);
+  --no-opacity:.86;
+
+  --r:10px;
+  --shadow:0 1px 0 rgba(18,23,26,.04), 0 2px 8px rgba(18,23,26,.06);
+  color-scheme:light;
+}
+html[data-theme="dark"]{
+  /* Палитра в духе GitHub Dark: глубокий сине-графитовый фон */
+  --paper:#0D1117;
+  --panel:#161B22;
+  --frame:#010409;
+  --frame-lit:#161B22;
+  --ink:#E6EDF3;
+  --muted:#8B949E;
+  --rule:#30363D;
+  --rule-soft:#21262D;
+
+  --green:#3FB950;
+  --red:#F85149;
+  --blue:#388BFD;
+  --amber:#D29922;
+  --lime:#7EE787;
+
+  --card-bg:#161B22;
+  --card-came:#0F2418;
+  --card-no:#2A1517;
+  --card-moved:#2A2113;
+  --hover:#21262D;
+  --gtime-bg:#0D1117;
+  --input-bg:#0D1117;
+  --ring:rgba(56,139,253,.35);
+  --no-opacity:.72;
+
+  --shadow:0 1px 0 rgba(1,4,9,.4), 0 3px 12px rgba(1,4,9,.5);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--paper);color:var(--ink);
+  font-family:"Golos Text",system-ui,sans-serif;font-size:15px;
+  display:grid;place-items:center;padding:20px;
+  -webkit-font-smoothing:antialiased;
+}
+.box{
+  width:100%;max-width:340px;background:var(--panel);
+  border:1px solid var(--rule);border-radius:14px;padding:26px 24px;box-shadow:var(--shadow);
+}
+h1{font-family:"Oswald",sans-serif;font-weight:500;font-size:22px;letter-spacing:.14em;
+   text-transform:uppercase;margin:0}
+.sub{font-size:12px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin:2px 0 22px}
+label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+input{
+  width:100%;font:inherit;padding:10px 12px;margin-bottom:14px;color:var(--ink);
+  background:var(--input-bg);border:1px solid var(--rule);border-radius:9px;
+}
+input:focus{outline:2px solid var(--blue);outline-offset:-1px}
+button{
+  width:100%;background:var(--blue);color:#fff;border:0;border-radius:9px;
+  padding:11px;font:inherit;font-weight:600;cursor:pointer;
+}
+html[data-theme="dark"] button{color:#0D1117}
+button:hover{filter:brightness(1.08)}
+button:disabled{opacity:.6;cursor:default}
+.err{
+  background:var(--card-no);border:1px solid var(--red);color:var(--red);
+  border-radius:9px;padding:10px 12px;font-size:13px;margin-bottom:14px;
+}
+.hint{font-size:12px;color:var(--muted);margin-top:16px;line-height:1.5}
+</style>
+</head>
+<body>
+<form class="box" id="form">
+  <h1>NeAdPulse</h1>
+  <div class="sub">Онлайн-отдел</div>
+
+  <div class="err" id="err" hidden></div>
+
+  <label for="login">Логин</label>
+  <input id="login" name="login" autocomplete="username" autocapitalize="off" autofocus required>
+
+  <label for="password">Пароль</label>
+  <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+  <button type="submit" id="go">Войти</button>
+
+  <div class="hint">Логин выдаёт руководитель. Если забыли пароль — обратитесь к нему, восстановить самостоятельно нельзя.</div>
+</form>
+
+<script>
+const form = document.getElementById('form');
+const err  = document.getElementById('err');
+const go   = document.getElementById('go');
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  err.hidden = true;
+  go.disabled = true; go.textContent = 'Проверяем…';
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        login: document.getElementById('login').value,
+        password: document.getElementById('password').value,
+      }),
+    });
+    if (r.ok) { location.href = '/'; return; }
+    const d = await r.json().catch(() => ({}));
+    err.textContent = d.error || 'Не удалось войти';
+    err.hidden = false;
+  } catch (e) {
+    err.textContent = 'Нет связи с сервером';
+    err.hidden = false;
+  }
+  go.disabled = false; go.textContent = 'Войти';
+});
+</script>
+</body>
+</html>
