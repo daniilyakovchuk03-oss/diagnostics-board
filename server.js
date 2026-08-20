@@ -16,7 +16,7 @@ const path = require('path');
 const CONFIG = require('./config');
 const sipuni = require('./sipuni');
 
-const BUILD = '2026-08-20.4';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-20.5';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -496,9 +496,18 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+/* Заранее тянем звонки за сегодня, чтобы первое открытие вкладки
+   не ждало ответа Сипуни */
+function warmCalls() {
+  if (!sipuni.enabled()) return;
+  const today = new Date().toISOString().slice(0, 10);
+  sipuni.stats(today, today).catch(() => {});
+}
+
 server.listen(PORT, async () => {
   console.log(`Доска запущена на порту ${PORT}`);
   await loadStages();
   refresh();
+  setTimeout(warmCalls, 3000);
   setInterval(refresh, Math.max(20, CONFIG.REFRESH_SEC) * 1000);
 });
