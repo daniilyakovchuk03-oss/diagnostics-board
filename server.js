@@ -16,7 +16,7 @@ const path = require('path');
 const CONFIG = require('./config');
 const sipuni = require('./sipuni');
 
-const BUILD = '2026-08-20.1';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-20.2';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -137,7 +137,9 @@ function toLead(lead) {
   return {
     id: lead.id,
     created: created.date,
-    assigned: Boolean(raw),                 // назначена ли диагностика
+    // Назначенной считаем только сделку с РАЗБОРЧИВОЙ датой — так воронка
+    // и доска диагностик показывают одни и те же сделки
+    assigned: Boolean(local(raw)),
     st,
     m: columnOf(lead),
     src: sourceOf(lead),
