@@ -16,7 +16,50 @@ const path = require('path');
 const CONFIG = require('./config');
 const sipuni = require('./sipuni');
 
-const BUILD = '2026-08-20.5';   // меняется с каждой правкой — видно в /health
+/* ── Общее хранилище таблицы эффективности ──────────────────────
+   Цифры, которые руководитель вбивает руками. Держим в памяти и
+   пишем в файл, чтобы переживать перезапуск сервиса.
+   На Railway файловая система обнуляется при новом деплое — чтобы
+   данные жили дольше, подключите Volume и укажите DATA_DIR. */
+const DATA_DIR  = process.env.DATA_DIR || path.join(__dirname, 'data');
+const DATA_FILE = path.join(DATA_DIR, 'store.json');
+let store = {};
+
+try {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (fs.existsSync(DATA_FILE)) store = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  console.log(`Хранилище: ${Object.keys(store).length} записей в ${DATA_FILE}`);
+} catch (e) {
+  console.error('Хранилище недоступно:', e.message);
+}
+
+/* Пишем сразу: данных мало, а терять введённые вручную цифры нельзя.
+   Сначала во временный файл, потом переименование — так файл не побьётся,
+   если сервис остановят в момент записи. */
+function saveStore() {
+  try {
+    const tmp = DATA_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(store));
+    fs.renameSync(tmp, DATA_FILE);
+  } catch (e) {
+    console.error('Не удалось записать хранилище:', e.message);
+  }
+}
+
+/* Читаем тело запроса целиком, с ограничением размера */
+function readBody(req, limit = 5 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', c => {
+      data += c;
+      if (data.length > limit) { reject(new Error('Слишком большой запрос')); req.destroy(); }
+    });
+    req.on('end', () => resolve(data));
+    req.on('error', reject);
+  });
+}
+
+const BUILD = '2026-08-20.7';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -257,7 +300,7 @@ function workSeconds(startTs, endTs) {
    исходящего звонка менеджера на телефон этого клиента ────────── */
 async function responseTimes(from, to) {
   const out = {};
-  for (const m of CONFIG.MANAGERS) out[m.id] = { deltas: [] };
+  for (const m of CONFIG.MANAGERS) out[m.id] = { deltas: [], noCall: 0, leads: 0 };
 
   const calls = await sipuni.rows(from, to);
   if (!calls.length) return finishResponse(out);
@@ -280,13 +323,14 @@ async function responseTimes(from, to) {
   const earliest = from ? new Date(from + 'T00:00:00Z').getTime() - DAY : 0;
 
   for (const lead of (cache.leads || [])) {
-    if (!lead.m || !lead.phones.length || !lead.createdTs) continue;
+    if (!lead.m || !lead.createdTs) continue;
     if (earliest && lead.createdTs < earliest) continue;
     if (to && lead.created > to) continue;
+    if (!lead.phones.length) { out[lead.m].noPhone = (out[lead.m].noPhone || 0) + 1; continue; }
 
     const man = CONFIG.MANAGERS.find(x => x.id === lead.m);
     const map = man && byExt.get(String(man.ext));
-    if (!map) continue;
+    if (!map) { out[lead.m].leads++; out[lead.m].noCall++; continue; }
 
     // первый звонок этому клиенту после создания сделки
     let first = null;
@@ -295,7 +339,9 @@ async function responseTimes(from, to) {
         if (at >= lead.createdTs && (first === null || at < first)) first = at;
       }
     }
+    out[lead.m].leads++;
     if (first !== null) out[lead.m].deltas.push(workSeconds(lead.createdTs, first));
+    else out[lead.m].noCall++;                 // новый лид, а звонка ему так и не было
   }
   return finishResponse(out);
 }
@@ -308,6 +354,9 @@ function finishResponse(out) {
       avgResp: n ? Math.round(v.deltas.reduce((a, b) => a + b, 0) / n) : null,
       medResp: n ? Math.round(v.deltas.slice().sort((a, b) => a - b)[Math.floor(n / 2)]) : null,
       matched: n,
+      noCall: v.noCall || 0,
+      newLeads: v.leads || 0,
+      noPhone: v.noPhone || 0,
     };
   }
   return res;
@@ -411,7 +460,8 @@ const server = http.createServer(async (req, res) => {
     const data = await sipuni.stats(from, to);
     if (data.enabled) {
       const resp = await responseTimes(from, to);
-      data.managers = data.managers.map(m => ({ ...m, ...(resp[m.id] || { avgResp: null, matched: 0 }) }));
+      data.managers = data.managers.map(m => ({
+        ...m, ...(resp[m.id] || { avgResp: null, medResp: null, matched: 0, noCall: 0, newLeads: 0 }) }));
     }
     return json(200, data);
   }
@@ -469,6 +519,31 @@ const server = http.createServer(async (req, res) => {
       // Лиды, за которых никто не отвечает из отдела
       other: count(list.filter(l => !l.m)),
     });
+  }
+
+  // ── Хранилище таблицы эффективности
+  if (url.pathname === '/api/store') {
+    const key = url.searchParams.get('key');
+    if (req.method === 'GET') {
+      if (!key) return json(400, { error: 'Не указан ключ' });
+      return json(200, { key, value: store[key] ?? null });
+    }
+    if (req.method === 'POST') {
+      const body = JSON.parse(await readBody(req) || '{}');
+      if (!body.key) return json(400, { error: 'Не указан ключ' });
+      store[body.key] = String(body.value ?? '');
+      saveStore();
+      return json(200, { key: body.key, ok: true });
+    }
+    if (req.method === 'DELETE') {
+      if (key) { delete store[key]; saveStore(); }
+      return json(200, { key, deleted: true });
+    }
+  }
+
+  if (url.pathname === '/api/store/list') {
+    const prefix = url.searchParams.get('prefix') || '';
+    return json(200, { keys: Object.keys(store).filter(k => k.startsWith(prefix)) });
   }
 
   if (url.pathname === '/setup') return send(200, MIME['.html'], await setupPage());
