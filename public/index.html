@@ -548,6 +548,7 @@ async function loadConfig(){
     const c = await getJSON('/api/config');
     MANAGERS = c.managers; state.mkEnabled = c.mkEnabled; state.configured = c.configured;
     state.amoDomain = c.amoDomain || '';
+    state.work = c.work || [10,19];
     if(c.callsEnabled === false) document.querySelector('.side__nav button[data-tab="calls"]').style.opacity = '.5';
   }catch(e){ state.failed = true; }
 }
@@ -720,6 +721,7 @@ function renderCalls(){
     <div class="stat"><b>${att ? Math.round(con/att*100) : 0}%</b><span>Дозвон</span></div>
     <div class="stat b"><b>${hhmm(sum('talkSec'))}</b><span>На линии</span></div>`;
 
+  const w = state.work || [10,19];
   box.innerHTML = c.managers.map(m=>`
     <section class="mcol">
       <div class="col__head"><span class="col__name">${m.name}</span></div>
@@ -729,9 +731,15 @@ function renderCalls(){
       <div class="bar"><i style="width:${m.rate}%"></i></div>
       <div class="mrow"><span>Время на линии</span><b>${hhmm(m.talkSec)}</b></div>
       <div class="mrow"><span>Принято входящих</span><b>${m.incoming}</b></div>
-      <div class="mrow"><span>Реакция на новый лид</span><b>${dur(m.avgResp)}</b></div>
-      ${m.matched ? `<div class="mrow"><span style="font-size:11px">по ${m.matched} лидам · медиана ${dur(m.medResp)}</span><b></b></div>` : ''}
-    </section>`).join('');
+      <div class="mrow"><span>Реакция на новый лид</span><b>${dur(m.medResp)}</b></div>
+      ${m.matched ? `<div class="mrow"><span style="font-size:11px">типичная · среднее ${dur(m.avgResp)} · по ${m.matched} лидам</span><b></b></div>` : ''}
+    </section>`).join('') + `
+    <div class="notice" style="grid-column:1/-1;text-align:left">
+      «Реакция на новый лид» — сколько прошло от появления сделки в амо до первого исходящего звонка
+      этому клиенту. Считается только <b style="display:inline">рабочее время ${w[0]}:00–${w[1]}:00</b>:
+      лид, упавший ночью, начинает отсчёт с утра. Крупно показана типичная реакция (медиана) —
+      половина лидов взята быстрее неё; среднее рядом, оно чувствительно к единичным долгим случаям.
+    </div>`;
 }
 
 /* ── Вкладка «Лиды» ───────────────────────────────────────── */
@@ -872,8 +880,9 @@ function renderUser(){
           row('Процент дозвона', cl.rate + '%', 'a'),
           row('Время на линии', hhmm(cl.talkSec)),
           row('Принято входящих', cl.incoming),
-          row('Реакция на новый лид', dur(cl.avgResp)),
-          cl.matched ? row('Медиана реакции', dur(cl.medResp)) : '',
+          row('Реакция на новый лид', dur(cl.medResp)),
+          cl.matched ? row('Среднее (с учётом хвостов)', dur(cl.avgResp)) : '',
+          cl.matched ? row('Лидов в расчёте', cl.matched) : '',
         ].join('') : '<div class="empty">Сипуни не подключена</div>'}
       </section>
 
