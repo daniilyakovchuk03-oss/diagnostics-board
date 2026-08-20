@@ -361,6 +361,11 @@ html[data-theme="dark"] .amo:hover{color:#0D1117}
 .ftable td:first-child{font-family:"Golos Text",sans-serif;font-weight:500}
 .ftable tr:last-child td{border-bottom:0}
 .ftable tr.dim td{color:var(--muted)}
+.ucards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;align-items:start}
+.ublock{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.ublock h3{margin:0;padding:12px 15px;font-family:"Oswald",sans-serif;font-weight:500;font-size:13px;
+  letter-spacing:.14em;text-transform:uppercase;border-bottom:2px solid var(--ink)}
+.ublock .col__list{padding:8px}
 .mark{cursor:default}
 .card[data-status="late"]{border-left-color:var(--amber);background:var(--card-moved)}
 .stat.a b{color:var(--amber)}
@@ -391,6 +396,10 @@ html[data-theme="dark"] .amo:hover{color:#0D1117}
     <button data-tab="funnel" aria-pressed="false">
       <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M2.6 3.5h14.8l-5.6 6.6v5.6l-3.6 1.8v-7.4Z"/></svg>
       <span>Лиды</span>
+    </button>
+    <button data-tab="users" aria-pressed="false">
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="6.6" r="3.1"/><path d="M3.8 16.8a6.2 6.2 0 0 1 12.4 0"/></svg>
+      <span>Пользователи</span>
     </button>
     <button data-tab="calls" aria-pressed="false">
       <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 3.2 8 6.1 6.3 7.9a9 9 0 0 0 5.8 5.8l1.8-1.7 2.9 1.6v3a1.4 1.4 0 0 1-1.5 1.4A14.2 14.2 0 0 1 2.9 4.7 1.4 1.4 0 0 1 4.3 3.2Z"/></svg>
@@ -472,6 +481,10 @@ html[data-theme="dark"] .amo:hover{color:#0D1117}
   <div class="funnel" id="funnel"></div>
 </section>
 
+<section id="usersView" hidden>
+  <div class="funnel" id="userBox"></div>
+</section>
+
 <section id="callsView" hidden>
   <div class="stats" id="callStats"></div>
   <div class="metrics" id="metrics"></div>
@@ -503,7 +516,7 @@ const daysBetween = (a,b) => Math.round((dateOf(b)-dateOf(a))/86400000);
 
 const state = { from:isoOf(today), to:isoOf(today), items:[], filter:'all', mk:null, view:'board',
                 mkEnabled:false, configured:false, updatedAt:null, failed:false,
-                tab:'board', calls:null, funnel:null, src:'' };
+                tab:'board', calls:null, funnel:null, src:'', user:null };
 const isRange = () => state.from !== state.to;
 
 
@@ -666,13 +679,20 @@ function render(){
 
 /* ── Вкладка «Звонки» ─────────────────────────────────────── */
 const hhmm = sec => Math.floor(sec/3600) + ' ч ' + String(Math.floor(sec%3600/60)).padStart(2,'0') + ' мин';
+/* Короткая запись длительности: 45 сек · 12 мин · 1 ч 20 мин */
+const dur = sec => {
+  if(sec === null || sec === undefined) return '—';
+  if(sec < 60) return sec + ' сек';
+  if(sec < 3600) return Math.round(sec/60) + ' мин';
+  return Math.floor(sec/3600) + ' ч ' + String(Math.round(sec%3600/60)).padStart(2,'0') + ' мин';
+};
 
-async function loadCalls(){
-  if(state.tab !== 'calls') return;
+async function loadCalls(force){
+  if(!force && state.tab !== 'calls') return;
   try{
     state.calls = await getJSON(`/api/calls?from=${state.from}&to=${state.to}`, 40000);
   }catch(e){ state.calls = { error: e.message, managers: [] }; }
-  renderCalls();
+  if(state.tab === 'calls') renderCalls();
 }
 
 function renderCalls(){
@@ -709,19 +729,21 @@ function renderCalls(){
       <div class="bar"><i style="width:${m.rate}%"></i></div>
       <div class="mrow"><span>Время на линии</span><b>${hhmm(m.talkSec)}</b></div>
       <div class="mrow"><span>Принято входящих</span><b>${m.incoming}</b></div>
+      <div class="mrow"><span>Реакция на новый лид</span><b>${dur(m.avgResp)}</b></div>
+      ${m.matched ? `<div class="mrow"><span style="font-size:11px">по ${m.matched} лидам · медиана ${dur(m.medResp)}</span><b></b></div>` : ''}
     </section>`).join('');
 }
 
 /* ── Вкладка «Лиды» ───────────────────────────────────────── */
 const pct = (a,b) => b ? Math.round(a/b*100) : 0;
 
-async function loadFunnel(){
-  if(state.tab !== 'funnel') return;
+async function loadFunnel(force){
+  if(!force && state.tab !== 'funnel') return;
   try{
     const q = state.src ? '&src=' + state.src : '';
     state.funnel = await getJSON(`/api/funnel?from=${state.from}&to=${state.to}${q}`);
   }catch(e){ state.funnel = { error: e.message }; }
-  renderFunnel();
+  if(state.tab === 'funnel') renderFunnel();
 }
 
 function renderFunnel(){
@@ -801,16 +823,81 @@ function renderFunnel(){
     </div>`;
 }
 
+/* ── Вкладка «Пользователи» ───────────────────────────────── */
+async function loadUser(){
+  if(state.tab !== 'users') return;
+  // собираем всё, что известно про менеджера: лиды, звонки, встречи
+  await Promise.all([loadDay(), loadCalls(true), loadFunnel(true)]);
+  renderUser();
+}
+
+function renderUser(){
+  const box = document.getElementById('userBox');
+  if(!MANAGERS.length){ box.innerHTML = '<div class="notice">Загружаем…</div>'; return; }
+
+  const id = state.user || MANAGERS[0].id;
+  const man = MANAGERS.find(m => m.id === id) || MANAGERS[0];
+  const chips = MANAGERS.map(m =>
+    `<button class="chip" data-user="${m.id}" aria-pressed="${m.id===id}">${m.name}</button>`).join('');
+
+  const fn = (state.funnel && state.funnel.byManager || []).find(m => m.id === id);
+  const cl = (state.calls && state.calls.managers || []).find(m => m.id === id);
+  const meets = state.items.filter(x => x.m === id)
+    .sort((a,b)=> (a.date+a.t).localeCompare(b.date+b.t));
+
+  const row = (label, value, cls='') => `<div class="mrow ${cls}"><span>${label}</span><b>${value}</b></div>`;
+
+  box.innerHTML = `
+    <div class="controls" style="padding:0">${chips}</div>
+
+    <div class="ucards">
+      <section class="ublock">
+        <h3>Лиды</h3>
+        ${fn ? [
+          row('Пришло лидов', fn.leads),
+          row('Назначено диагностик', fn.assigned),
+          row('Конверсия в назначение', pct(fn.assigned, fn.leads) + '%', 'a'),
+          row('Дошло', fn.came, 'g'),
+          row('Не дошло', fn.no),
+          row('Доходимость', pct(fn.came, fn.assigned) + '%', 'a'),
+          row('Купили', fn.won, 'g'),
+        ].join('') : '<div class="empty">Нет данных</div>'}
+      </section>
+
+      <section class="ublock">
+        <h3>Звонки</h3>
+        ${cl ? [
+          row('Попыток дозвониться', cl.attempts),
+          row('Дозвонов', cl.connected, 'g'),
+          row('Процент дозвона', cl.rate + '%', 'a'),
+          row('Время на линии', hhmm(cl.talkSec)),
+          row('Принято входящих', cl.incoming),
+          row('Реакция на новый лид', dur(cl.avgResp)),
+          cl.matched ? row('Медиана реакции', dur(cl.medResp)) : '',
+        ].join('') : '<div class="empty">Сипуни не подключена</div>'}
+      </section>
+
+      <section class="ublock">
+        <h3>Встречи за период · ${meets.length}</h3>
+        <div class="col__list">
+          ${meets.length ? meets.map(cardHTML).join('') : '<div class="empty">Записей нет</div>'}
+        </div>
+      </section>
+    </div>`;
+}
+
 function setTab(t){
   state.tab = t;
   document.querySelectorAll('.side__nav button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.tab===t));
   if(window.innerWidth <= 900) closeSide();
   document.getElementById('callsView').hidden  = t !== 'calls';
   document.getElementById('funnelView').hidden = t !== 'funnel';
+  document.getElementById('usersView').hidden  = t !== 'users';
   document.getElementById('stats').hidden = t !== 'board';
   document.getElementById('wrap').hidden  = t !== 'board';
   if(t === 'calls'){ renderCalls(); loadCalls(); }
   if(t === 'funnel'){ renderFunnel(); loadFunnel(); }
+  if(t === 'users'){ renderUser(); loadUser(); }
 }
 document.querySelectorAll('.side__nav button').forEach(b=> b.onclick = ()=> setTab(b.dataset.tab));
 
@@ -828,6 +915,8 @@ scrim.onclick = closeSide;
 
 /* ── События ──────────────────────────────────────────────── */
 document.addEventListener('click', e=>{
+  const uc = e.target.closest('.chip[data-user]');
+  if(uc){ state.user = uc.dataset.user; renderUser(); return; }
   const sc = e.target.closest('.chip[data-src]');
   if(sc){ state.src = sc.dataset.src; state.funnel = null; renderFunnel(); loadFunnel(); return; }
   const chip = e.target.closest('.chip[data-filter]');
@@ -845,7 +934,7 @@ function setView(v){
 }
 document.getElementById('viewBoard').onclick = ()=>setView('board');
 document.getElementById('viewGrid').onclick  = ()=>setView('grid');
-function reload(){ state.calls = null; state.funnel = null; loadDay(); loadCalls(); loadFunnel(); }
+function reload(){ state.calls = null; state.funnel = null; loadDay(); loadCalls(); loadFunnel(); loadUser(); }
 function move(dir){
   const span = daysBetween(state.from, state.to) + 1;
   state.from = shift(state.from, dir*span);
