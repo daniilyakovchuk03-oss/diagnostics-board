@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Эффективность — NeAdPulse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+
+:root{
+  --paper:#E9EDEB;
+  --panel:#FFFFFF;
+  --frame:#333B38;
+  --frame-lit:#4C5652;
+  --ink:#12171A;
+  --muted:#6B7670;
+  --rule:#CBD4D0;
+  --rule-soft:#E2E8E5;
+
+  --green:#0F7A45;
+  --red:#C3271E;
+  --blue:#1F4FD0;
+  --amber:#B05806;
+  --lime:#7B9E2E;
+
+  --card-bg:#FFFFFF;
+  --card-came:#F4FAF6;
+  --card-no:#FCF5F4;
+  --card-moved:#FDF8F2;
+  --hover:#F3F6F4;
+  --gtime-bg:#FAFBFA;
+  --input-bg:#FFFFFF;
+  --ring:rgba(31,79,208,.14);
+  --no-opacity:.86;
+
+  --r:10px;
+  --shadow:0 1px 0 rgba(18,23,26,.04), 0 2px 8px rgba(18,23,26,.06);
+  color-scheme:light;
+}
+html[data-theme="dark"]{
+  /* Палитра в духе GitHub Dark: глубокий сине-графитовый фон */
+  --paper:#0D1117;
+  --panel:#161B22;
+  --frame:#010409;
+  --frame-lit:#161B22;
+  --ink:#E6EDF3;
+  --muted:#8B949E;
+  --rule:#30363D;
+  --rule-soft:#21262D;
+
+  --green:#3FB950;
+  --red:#F85149;
+  --blue:#388BFD;
+  --amber:#D29922;
+  --lime:#7EE787;
+
+  --card-bg:#161B22;
+  --card-came:#0F2418;
+  --card-no:#2A1517;
+  --card-moved:#2A2113;
+  --hover:#21262D;
+  --gtime-bg:#0D1117;
+  --input-bg:#0D1117;
+  --ring:rgba(56,139,253,.35);
+  --no-opacity:.72;
+
+  --shadow:0 1px 0 rgba(1,4,9,.4), 0 3px 12px rgba(1,4,9,.5);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper);color:var(--ink);
+  font-family:"Golos Text",system-ui,sans-serif;font-size:15px;line-height:1.45;
+  -webkit-font-smoothing:antialiased;padding:20px;
+}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px}
+[hidden]{display:none !important}
+
+h2{font-family:"Oswald",sans-serif;font-weight:500;font-size:13px;letter-spacing:.16em;
+   text-transform:uppercase;color:var(--muted);margin:26px 0 12px}
+h2:first-of-type{margin-top:0}
+
+/* ── Шапка ── */
+.top{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:20px}
+.nav{display:flex;align-items:center;gap:6px}
+.nav button{background:var(--panel);border:1px solid var(--rule);border-radius:8px;
+  padding:7px 13px;cursor:pointer;transition:.15s ease}
+.nav button:hover{border-color:var(--frame-lit)}
+.month{font-family:"IBM Plex Mono",monospace;font-size:14px;padding:7px 14px;
+  border:1px solid var(--rule);border-radius:8px;background:var(--panel);min-width:170px;text-align:center}
+.spacer{flex:1}
+.saved{font-size:12px;color:var(--green);opacity:0;transition:opacity .3s ease}
+.saved.on{opacity:1}
+
+/* ── Карточки эффективности ── */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.card2{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);
+  box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+.card2__head{padding:14px 16px 12px;border-bottom:1px solid var(--rule-soft);
+  display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.card2__name{font-family:"Oswald",sans-serif;font-weight:500;font-size:20px;
+  letter-spacing:.06em;text-transform:uppercase;line-height:1}
+.score{font-family:"IBM Plex Mono",monospace;font-size:30px;font-weight:600;line-height:1;
+  font-variant-numeric:tabular-nums}
+.score small{display:block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);font-weight:500;margin-top:3px;text-align:right}
+.bars{padding:12px 16px;display:grid;gap:10px}
+.bar2{display:grid;gap:5px}
+.bar2__top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:13px}
+.bar2__val{font-family:"IBM Plex Mono",monospace;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.bar2__track{height:5px;background:var(--rule-soft);border-radius:3px;overflow:hidden}
+.bar2__fill{height:100%;border-radius:3px;transition:width .4s ease}
+.bar2__hint{font-size:11px;color:var(--muted)}
+.card2__foot{margin-top:auto;padding:12px 16px;border-top:1px solid var(--rule-soft)}
+.why{width:100%;background:transparent;border:1px solid var(--rule);border-radius:9px;
+  padding:9px 12px;cursor:pointer;font-size:13px;font-weight:500;transition:.15s ease;
+  display:flex;align-items:center;justify-content:center;gap:8px}
+.why:hover{border-color:var(--blue);color:var(--blue)}
+.why[aria-expanded="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
+html[data-theme="dark"] .why[aria-expanded="true"]{color:#0D1117}
+
+/* ── Разбор и рекомендации ── */
+.advice{padding:0 16px 14px;display:grid;gap:10px}
+.adv{border-left:3px solid var(--rule);padding:2px 0 2px 12px}
+.adv.bad{border-left-color:var(--red)}
+.adv.warn{border-left-color:var(--amber)}
+.adv.ok{border-left-color:var(--green)}
+.adv b{display:block;font-size:13px;font-weight:600;margin-bottom:3px}
+.adv span{display:block;font-size:12.5px;color:var(--muted);line-height:1.5}
+.adv em{font-style:normal;color:var(--ink)}
+
+/* ── Таблица продаж ── */
+.wrap2{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);
+  overflow:auto;box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%}
+th,td{border-bottom:1px solid var(--rule-soft);border-right:1px solid var(--rule-soft);
+  padding:0;text-align:center;font-size:13px}
+th{position:sticky;top:0;z-index:2;background:var(--panel);padding:9px 6px;
+  font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;
+  border-bottom:2px solid var(--ink)}
+th.wknd,td.wknd{background:var(--gtime-bg)}
+td.name,th.name{text-align:left;padding:9px 12px;font-weight:500;position:sticky;left:0;
+  background:var(--panel);z-index:1;min-width:130px}
+td.total{font-family:"IBM Plex Mono",monospace;font-weight:600;background:var(--gtime-bg);
+  padding:9px 12px;white-space:nowrap}
+td input{width:100%;min-width:56px;border:0;background:transparent;text-align:center;
+  padding:9px 4px;font-family:"IBM Plex Mono",monospace;font-size:13px;
+  font-variant-numeric:tabular-nums;color:var(--ink)}
+td input:focus{background:var(--hover);outline:2px solid var(--blue);outline-offset:-2px}
+td input::-webkit-outer-spin-button,td input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+tr.sum td{font-weight:600;background:var(--gtime-bg)}
+
+.note{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);
+  padding:14px 16px;font-size:13px;color:var(--muted);line-height:1.6;margin-top:14px}
+.note b{color:var(--ink)}
+.skel{display:inline-block;min-width:1.4em;text-align:center;opacity:.4;animation:blink 1.1s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:.45}50%{opacity:.12}}
+@media (prefers-reduced-motion:reduce){.skel,.bar2__fill{animation:none;transition:none}}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="nav">
+    <button id="prev" aria-label="Предыдущий месяц">←</button>
+    <div class="month" id="monthLabel">—</div>
+    <button id="next" aria-label="Следующий месяц">→</button>
+    <button id="cur">Текущий</button>
+  </div>
+  <span class="spacer"></span>
+  <span class="saved" id="saved">Сохранено</span>
+</div>
+
+<h2>Эффективность менеджеров</h2>
+<div class="cards" id="cards"></div>
+
+<h2>Продажи по дням, ₸</h2>
+<div class="wrap2" id="salesWrap"></div>
+
+<div class="note">
+  Вписывать нужно только продажи — остальные цифры подтягиваются сами: диагностики из amoCRM,
+  звонки и время реакции из Сипуни. Эффективность считается как среднее по пяти показателям,
+  у каждого свой ориентир. Нажмите <b>«Почему такая цифра»</b> у любого менеджера,
+  чтобы увидеть разбор и что конкретно делать.
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   Эффективность менеджеров.
+
+   Руками вносятся только продажи. Диагностики берутся из amoCRM,
+   звонки и скорость реакции — из Сипуни. Оценка складывается из
+   пяти показателей с понятными ориентирами; по каждому можно
+   получить разбор и конкретные шаги.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Ориентиры. Меняются здесь — сразу отражаются в оценке и советах. */
+const GOALS = {
+  toMeet:   { target: 35, name: 'Конверсия лида во встречу' },
+  reach:    { target: 60, name: 'Доходимость до встречи' },
+  connect:  { target: 55, name: 'Дозвон' },
+  speed:    { target: 15, name: 'Скорость реакции, мин' },   // меньше — лучше
+  activity: { target: 40, name: 'Звонков в день' },
+};
+
+const MNAMES = ['Январь','Февраль','Март','Апрель','Май','Июнь',
+                'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+
+const pad = n => String(n).padStart(2, '0');
+const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+const money = n => (n || 0).toLocaleString('ru-RU');
+const SK = '<span class="skel">—</span>';
+
+const today = new Date();
+const state = {
+  ym: `${today.getFullYear()}-${pad(today.getMonth() + 1)}`,
+  managers: [], funnel: null, calls: null,
+  sales: {},           // { идентификатор менеджера: [по дням] }
+  open: null,          // у кого раскрыт разбор
+};
+
+/* ── Календарь месяца ─────────────────────────────────────────── */
+const ymParts = () => state.ym.split('-').map(Number);
+const daysInMonth = () => { const [y, m] = ymParts(); return new Date(y, m, 0).getDate(); };
+const isWeekend = d => { const [y, m] = ymParts(); const g = new Date(y, m - 1, d).getDay(); return g === 0 || g === 6; };
+const monthRange = () => {
+  const [y, m] = ymParts();
+  return [`${y}-${pad(m)}-01`, `${y}-${pad(m)}-${pad(daysInMonth())}`];
+};
+/* Сколько дней месяца уже прошло — чтобы «звонков в день» не занижалось в начале месяца */
+const elapsedDays = () => {
+  const [y, m] = ymParts();
+  if (y === today.getFullYear() && m === today.getMonth() + 1) return today.getDate();
+  return daysInMonth();
+};
+
+/* ── Загрузка ─────────────────────────────────────────────────── */
+async function getJSON(url, ms = 45000) {
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: stop.signal });
+    if (!r.ok) throw new Error('Сервер ответил ' + r.status);
+    return await r.json();
+  } finally { clearTimeout(timer); }
+}
+
+const salesKey = () => 'neadpulse:sales:' + state.ym;
+
+async function loadAll() {
+  const [from, to] = monthRange();
+  state.funnel = null; state.calls = null;
+  render();
+
+  try {
+    const cfg = await getJSON('/api/config');
+    state.managers = cfg.managers || [];
+  } catch (e) { console.error('Настройки:', e.message); }
+
+  // продажи из общего хранилища
+  try {
+    const r = await getJSON('/api/store?key=' + encodeURIComponent(salesKey()));
+    state.sales = r && r.value ? JSON.parse(r.value) : {};
+  } catch (e) { state.sales = {}; }
+  render();
+
+  // цифры из амо и Сипуни — параллельно
+  const [f, c] = await Promise.allSettled([
+    getJSON(`/api/funnel?from=${from}&to=${to}`),
+    getJSON(`/api/calls?from=${from}&to=${to}`),
+  ]);
+  state.funnel = f.status === 'fulfilled' ? f.value : { error: f.reason.message };
+  state.calls  = c.status === 'fulfilled' ? c.value : { error: c.reason.message, managers: [] };
+  render();
+}
+
+let saveTimer = null;
+function saveSales() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      await fetch('/api/store', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: salesKey(), value: JSON.stringify(state.sales) }),
+      });
+      const s = document.getElementById('saved');
+      s.classList.add('on');
+      setTimeout(() => s.classList.remove('on'), 1500);
+    } catch (e) { console.error('Сохранение:', e.message); }
+  }, 600);
+}
+
+/* ── Показатели одного менеджера ──────────────────────────────── */
+function metricsOf(id) {
+  const f = (state.funnel && state.funnel.byManager || []).find(m => m.id === id);
+  const c = (state.calls  && state.calls.managers  || []).find(m => m.id === id);
+  if (!f && !c) return null;
+
+  const speedMin = c && c.medResp !== null && c.medResp !== undefined ? Math.round(c.medResp / 60) : null;
+  const perDay = c ? Math.round(c.attempts / Math.max(1, elapsedDays())) : null;
+
+  return {
+    leads: f ? f.leads : 0, assigned: f ? f.assigned : 0, came: f ? f.came : 0,
+    won: f ? f.won : 0, noCall: c ? c.noCall : 0,
+    attempts: c ? c.attempts : 0, connected: c ? c.connected : 0,
+    talkSec: c ? c.talkSec : 0,
+    toMeet:   f ? pct(f.assigned, f.leads) : null,
+    reach:    f ? pct(f.came, f.assigned) : null,
+    connect:  c ? c.rate : null,
+    speed:    speedMin,
+    activity: perDay,
+  };
+}
+
+/* Каждый показатель приводим к шкале 0–100 */
+function scoreOf(m) {
+  const parts = [];
+  const add = (key, value, score) => parts.push({ key, name: GOALS[key].name, value, score: Math.max(0, Math.min(100, Math.round(score))) });
+
+  if (m.toMeet   !== null) add('toMeet',   m.toMeet   + '%', m.toMeet   / GOALS.toMeet.target   * 100);
+  if (m.reach    !== null) add('reach',    m.reach    + '%', m.reach    / GOALS.reach.target    * 100);
+  if (m.connect  !== null) add('connect',  m.connect  + '%', m.connect  / GOALS.connect.target  * 100);
+  if (m.activity !== null) add('activity', m.activity,       m.activity / GOALS.activity.target * 100);
+  if (m.speed    !== null) {
+    // 15 минут и быстрее — отлично, 120 и дольше — ноль
+    const s = m.speed <= GOALS.speed.target ? 100 : 100 * (120 - m.speed) / (120 - GOALS.speed.target);
+    add('speed', m.speed + ' мин', s);
+  }
+
+  const total = parts.length ? Math.round(parts.reduce((a, p) => a + p.score, 0) / parts.length) : 0;
+  return { total, parts };
+}
+
+const scoreColor = s => s >= 80 ? 'var(--green)' : s >= 55 ? 'var(--amber)' : 'var(--red)';
+
+/* ── Разбор: что не так и что делать ──────────────────────────── */
+function advice(m, sc) {
+  const out = [];
+  const push = (level, title, text) => out.push({ level, title, text });
+
+  const p = k => (sc.parts.find(x => x.key === k) || {}).score;
+
+  if (m.toMeet !== null && p('toMeet') < 100) {
+    push(m.toMeet < GOALS.toMeet.target * 0.6 ? 'bad' : 'warn',
+      `Мало лидов доходит до записи — ${m.toMeet}% вместо ${GOALS.toMeet.target}%`,
+      `Из ${m.leads} лидов записаны на диагностику только ${m.assigned}. Разберите с менеджером записи разговоров ` +
+      `по незаписавшимся: чаще всего проблема в том, что встречу не предлагают прямо, а спрашивают «интересно ли вам». ` +
+      `Договоритесь называть конкретное время вместо открытого вопроса.`);
+  }
+  if (m.reach !== null && p('reach') < 100) {
+    push(m.reach < GOALS.reach.target * 0.6 ? 'bad' : 'warn',
+      `Записались, но не дошли — доходимость ${m.reach}% вместо ${GOALS.reach.target}%`,
+      `Из ${m.assigned} назначенных пришли ${m.came}. Введите обязательное подтверждение накануне вечером и напоминание ` +
+      `за час до встречи. Ещё помогает записывать не «когда удобно», а ближайшее время: чем дальше встреча, тем реже приходят.`);
+  }
+  if (m.connect !== null && p('connect') < 100) {
+    push(m.connect < GOALS.connect.target * 0.6 ? 'bad' : 'warn',
+      `Низкий дозвон — ${m.connect}% вместо ${GOALS.connect.target}%`,
+      `Из ${m.attempts} попыток разговор состоялся ${m.connected} раз. Проверьте время обзвона: утренние и обеденные часы ` +
+      `дают худший отклик. Не дозвонились — пишите в мессенджер сразу, а повторный набор ставьте на вечер того же дня.`);
+  }
+  if (m.activity !== null && p('activity') < 100) {
+    push(m.activity < GOALS.activity.target * 0.6 ? 'bad' : 'warn',
+      `Мало звонков — ${m.activity} в день вместо ${GOALS.activity.target}`,
+      `Всего ${m.attempts} попыток за период. Дело обычно не в лени, а в разрывах: длинные паузы между звонками. ` +
+      `Помогает блок обзвона на 90 минут подряд без переключения на переписку.`);
+  }
+  if (m.speed !== null && p('speed') < 100) {
+    push(m.speed > 60 ? 'bad' : 'warn',
+      `Медленная реакция на новый лид — ${m.speed} мин вместо ${GOALS.speed.target}`,
+      `Лид остывает буквально за полчаса: чем позже звонок, тем ниже шанс записать. Поставьте правило «первый набор в течение ` +
+      `10 минут» и уведомление на новую сделку, чтобы заявка не ждала конца текущего разговора.`);
+  }
+  if (m.noCall) {
+    push('bad', `${m.noCall} новых лидов остались без звонка`,
+      `Это самая дорогая потеря: за них уже заплачено рекламой. Проверьте, доходят ли уведомления о новых сделках ` +
+      `и не теряются ли заявки, упавшие в нерабочее время.`);
+  }
+
+  if (!out.length) {
+    push('ok', 'Показатели в норме',
+      `Все ориентиры выполнены. Точка роста — продажи: следите, чтобы дошедшие встречи конвертировались в оплату.`);
+  }
+  return out;
+}
+
+/* ── Отрисовка ────────────────────────────────────────────────── */
+function render() {
+  const [y, m] = ymParts();
+  document.getElementById('monthLabel').textContent = MNAMES[m - 1] + ' ' + y;
+  renderCards();
+  renderSales();
+}
+
+function renderCards() {
+  const box = document.getElementById('cards');
+  if (!state.managers.length) { box.innerHTML = ''; return; }
+
+  const loading = !state.funnel || !state.calls;
+
+  box.innerHTML = state.managers.map(man => {
+    const m = loading ? null : metricsOf(man.id);
+    const sc = m ? scoreOf(m) : null;
+    const opened = state.open === man.id;
+
+    const bars = !sc ? ['','','',''].map(() => `
+        <div class="bar2"><div class="bar2__top"><span>${SK}</span><span class="bar2__val">${SK}</span></div>
+        <div class="bar2__track"></div></div>`).join('')
+      : sc.parts.map(p => `
+        <div class="bar2">
+          <div class="bar2__top"><span>${p.name}</span><span class="bar2__val">${p.value}</span></div>
+          <div class="bar2__track"><i class="bar2__fill" style="width:${p.score}%;background:${scoreColor(p.score)};display:block"></i></div>
+          <div class="bar2__hint">ориентир ${GOALS[p.key].target}${p.key === 'speed' ? ' мин' : (p.key === 'activity' ? ' в день' : '%')}</div>
+        </div>`).join('');
+
+    const adv = (opened && m) ? `<div class="advice">${advice(m, sc).map(a => `
+        <div class="adv ${a.level}"><b>${a.title}</b><span>${a.text}</span></div>`).join('')}</div>` : '';
+
+    return `
+      <section class="card2">
+        <div class="card2__head">
+          <span class="card2__name">${man.name}</span>
+          <span class="score" style="color:${sc ? scoreColor(sc.total) : 'var(--muted)'}">
+            ${sc ? sc.total + '%' : SK}<small>эффективность</small>
+          </span>
+        </div>
+        <div class="bars">${bars}</div>
+        ${adv}
+        <div class="card2__foot">
+          <button class="why" data-why="${man.id}" aria-expanded="${opened}">
+            ${opened ? 'Свернуть разбор' : 'Почему такая цифра'}
+          </button>
+        </div>
+      </section>`;
+  }).join('');
+}
+
+function renderSales() {
+  const n = daysInMonth();
+  const head = ['<th class="name">Менеджер</th>'];
+  for (let d = 1; d <= n; d++) head.push(`<th class="${isWeekend(d) ? 'wknd' : ''}">${d}</th>`);
+  head.push('<th>Итого</th>');
+
+  const rows = state.managers.map(man => {
+    const arr = state.sales[man.id] || [];
+    const cells = [];
+    for (let d = 1; d <= n; d++) {
+      cells.push(`<td class="${isWeekend(d) ? 'wknd' : ''}">
+        <input type="number" inputmode="numeric" data-man="${man.id}" data-day="${d}"
+               value="${arr[d - 1] != null ? arr[d - 1] : ''}"></td>`);
+    }
+    const sum = arr.reduce((a, b) => a + (Number(b) || 0), 0);
+    return `<tr><td class="name">${man.name}</td>${cells.join('')}<td class="total">${money(sum)}</td></tr>`;
+  });
+
+  // итоговая строка по всем
+  const totals = [];
+  let grand = 0;
+  for (let d = 1; d <= n; d++) {
+    let s = 0;
+    for (const man of state.managers) s += Number((state.sales[man.id] || [])[d - 1]) || 0;
+    grand += s;
+    totals.push(`<td class="${isWeekend(d) ? 'wknd' : ''}">${s ? money(s) : ''}</td>`);
+  }
+
+  document.getElementById('salesWrap').innerHTML = `
+    <table>
+      <thead><tr>${head.join('')}</tr></thead>
+      <tbody>
+        ${rows.join('')}
+        <tr class="sum"><td class="name">Всего</td>${totals.join('')}<td class="total">${money(grand)}</td></tr>
+      </tbody>
+    </table>`;
+}
+
+/* ── События ──────────────────────────────────────────────────── */
+document.addEventListener('click', e => {
+  const w = e.target.closest('.why');
+  if (w) { state.open = state.open === w.dataset.why ? null : w.dataset.why; renderCards(); }
+});
+
+document.addEventListener('input', e => {
+  const i = e.target.closest('input[data-man]');
+  if (!i) return;
+  const id = i.dataset.man, day = Number(i.dataset.day);
+  if (!state.sales[id]) state.sales[id] = [];
+  state.sales[id][day - 1] = i.value === '' ? '' : Number(i.value);
+  saveSales();
+  // пересчитываем только итоги, не трогая поле, в котором печатают
+  const arr = state.sales[id];
+  const row = i.closest('tr');
+  row.querySelector('.total').textContent = money(arr.reduce((a, b) => a + (Number(b) || 0), 0));
+});
+
+function shiftMonth(dir) {
+  let [y, m] = ymParts();
+  m += dir;
+  if (m === 0) { m = 12; y--; }
+  if (m === 13) { m = 1; y++; }
+  state.ym = `${y}-${pad(m)}`;
+  loadAll();
+}
+document.getElementById('prev').onclick = () => shiftMonth(-1);
+document.getElementById('next').onclick = () => shiftMonth(1);
+document.getElementById('cur').onclick  = () => {
+  state.ym = `${today.getFullYear()}-${pad(today.getMonth() + 1)}`;
+  loadAll();
+};
+
+loadAll();
+
+</script>
+</body>
+</html>
