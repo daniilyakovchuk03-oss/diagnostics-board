@@ -515,10 +515,24 @@ function markSVG(st){
   return `<svg width="19" height="19" viewBox="0 0 19 19"><circle cx="9.5" cy="9.5" r="4.2" fill="none" stroke="#AEB9B4" stroke-width="2"/></svg>`;
 }
 
+/* Запрос с ограничением по времени: если сервер не ответил за 15 секунд,
+   показываем ошибку, а не крутим «Загружаем…» бесконечно. */
+async function getJSON(url, ms = 15000){
+  const stop = new AbortController();
+  const timer = setTimeout(()=> stop.abort(), ms);
+  try{
+    const r = await fetch(url, { signal: stop.signal });
+    if(!r.ok) throw new Error('Сервер ответил ' + r.status);
+    return await r.json();
+  } catch(e){
+    throw new Error(e.name === 'AbortError' ? 'Сервер не ответил за 15 секунд' : e.message);
+  } finally { clearTimeout(timer); }
+}
+
 /* ── Загрузка ─────────────────────────────────────────────── */
 async function loadConfig(){
   try{
-    const r = await fetch('/api/config'); const c = await r.json();
+    const c = await getJSON('/api/config');
     MANAGERS = c.managers; state.mkEnabled = c.mkEnabled; state.configured = c.configured;
     state.amoDomain = c.amoDomain || '';
     if(c.callsEnabled === false) document.querySelector('.side__nav button[data-tab="calls"]').style.opacity = '.5';
@@ -526,10 +540,9 @@ async function loadConfig(){
 }
 async function loadDay(){
   try{
-    const r = await fetch(`/api/appointments?from=${state.from}&to=${state.to}`);
-    const d = await r.json();
+    const d = await getJSON(`/api/appointments?from=${state.from}&to=${state.to}`);
     state.items = d.items || []; state.updatedAt = d.updatedAt; state.failed = false;
-  }catch(e){ state.failed = true; }
+  }catch(e){ state.failed = true; console.error('Диагностики:', e.message); }
   render();
 }
 
@@ -657,9 +670,8 @@ const hhmm = sec => Math.floor(sec/3600) + ' ч ' + String(Math.floor(sec%3600/6
 async function loadCalls(){
   if(state.tab !== 'calls') return;
   try{
-    const r = await fetch(`/api/calls?from=${state.from}&to=${state.to}`);
-    state.calls = await r.json();
-  }catch(e){ state.calls = {error:'Нет связи с сервером', managers:[]}; }
+    state.calls = await getJSON(`/api/calls?from=${state.from}&to=${state.to}`, 40000);
+  }catch(e){ state.calls = { error: e.message, managers: [] }; }
   renderCalls();
 }
 
@@ -707,16 +719,19 @@ async function loadFunnel(){
   if(state.tab !== 'funnel') return;
   try{
     const q = state.src ? '&src=' + state.src : '';
-    const r = await fetch(`/api/funnel?from=${state.from}&to=${state.to}${q}`);
-    state.funnel = await r.json();
-  }catch(e){ state.funnel = {error:'Нет связи с сервером'}; }
+    state.funnel = await getJSON(`/api/funnel?from=${state.from}&to=${state.to}${q}`);
+  }catch(e){ state.funnel = { error: e.message }; }
   renderFunnel();
 }
 
 function renderFunnel(){
   const f = state.funnel, box = document.getElementById('funnel');
   if(!f){ box.innerHTML = '<div class="notice">Загружаем…</div>'; return; }
-  if(f.error){ box.innerHTML = `<div class="notice"><b>Не удалось получить данные</b>${f.error}</div>`; return; }
+  if(f.error){ box.innerHTML = `<div class="notice warn"><b>Не удалось получить данные</b>${f.error}</div>`; return; }
+  if(!f.total || !f.byManager){
+    box.innerHTML = '<div class="notice warn"><b>Сервер отдал неполный ответ</b>Похоже, server.js в репозитории старой версии — обновите его.</div>';
+    return;
+  }
 
   const t = f.total;
   const rows = f.byManager.map(m=>`
