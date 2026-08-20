@@ -11,10 +11,61 @@
    ═══════════════════════════════════════════════════════════════ */
 
 const http = require('http');
+const crypto = require('crypto');
 const fs   = require('fs');
 const path = require('path');
 const CONFIG = require('./config');
 const sipuni = require('./sipuni');
+
+/* ── Вход и права ───────────────────────────────────────────────
+   Пароли берём из переменных окружения. Сессия — подписанная кука:
+   подделать её без секрета нельзя, база для этого не нужна. */
+const SESSION_SECRET = process.env.SESSION_SECRET
+  || crypto.createHash('sha256').update(String(process.env.AMO_TOKEN || 'neadpulse')).digest('hex');
+
+const sign = v => crypto.createHmac('sha256', SESSION_SECRET).update(v).digest('hex').slice(0, 32);
+
+/* Сравнение без утечки времени: обычное === выдаёт длину общего префикса */
+function sameSecret(a, b) {
+  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
+  if (x.length !== y.length) return false;
+  return crypto.timingSafeEqual(x, y);
+}
+
+function checkLogin(login, password) {
+  const u = (CONFIG.USERS || []).find(u => u.login === String(login || '').trim().toLowerCase());
+  if (!u) return null;
+  const expected = process.env[u.passwordEnv];
+  if (!expected) {
+    console.error(`Не задан пароль в переменной ${u.passwordEnv} — вход для «${u.login}» невозможен`);
+    return null;
+  }
+  return sameSecret(password, expected) ? u : null;
+}
+
+function makeCookie(login) {
+  const until = Date.now() + (CONFIG.SESSION_DAYS || 30) * 86400000;
+  const body = `${login}.${until}`;
+  const age = Math.round((CONFIG.SESSION_DAYS || 30) * 86400);
+  return `np_session=${body}.${sign(body)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}`;
+}
+
+function currentUser(req) {
+  const raw = (req.headers.cookie || '').split(';')
+    .map(c => c.trim()).find(c => c.startsWith('np_session='));
+  if (!raw) return null;
+  const [login, until, mac] = raw.slice('np_session='.length).split('.');
+  if (!login || !until || !mac) return null;
+  if (sign(`${login}.${until}`) !== mac) return null;      // подпись не сходится
+  if (Number(until) < Date.now()) return null;             // срок вышел
+  return (CONFIG.USERS || []).find(u => u.login === login) || null;
+}
+
+const isAdmin = u => u && u.role === 'admin';
+
+/* Менеджер видит только свои данные — режем на сервере, а не в интерфейсе */
+const mineOnly = (list, user, key = 'm') =>
+  isAdmin(user) ? list : list.filter(x => x[key] === user.managerId);
 
 /* ── Общее хранилище таблицы эффективности ──────────────────────
    Цифры, которые руководитель вбивает руками. Держим в памяти и
@@ -59,7 +110,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-20.7';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-20.8';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -431,6 +482,34 @@ const server = http.createServer(async (req, res) => {
   const json = (code, obj) => send(code, 'application/json; charset=utf-8', JSON.stringify(obj));
 
   try {
+  // ── Вход, выход, кто я
+  if (url.pathname === '/api/login' && req.method === 'POST') {
+    const body = JSON.parse(await readBody(req) || '{}');
+    const u = checkLogin(body.login, body.password);
+    if (!u) return json(401, { error: 'Неверный логин или пароль' });
+    res.setHeader('Set-Cookie', makeCookie(u.login));
+    return json(200, { login: u.login, name: u.name, role: u.role });
+  }
+  if (url.pathname === '/api/logout') {
+    res.setHeader('Set-Cookie', 'np_session=; Path=/; HttpOnly; Max-Age=0');
+    return json(200, { ok: true });
+  }
+
+  const user = currentUser(req);
+
+  if (url.pathname === '/api/me') {
+    if (!user) return json(401, { error: 'Не выполнен вход' });
+    return json(200, { login: user.login, name: user.name, role: user.role, managerId: user.managerId || null });
+  }
+
+  // Всё остальное — только после входа
+  const open = url.pathname === '/login.html' || url.pathname === '/amo/hook';
+  if (!user && !open) {
+    if (url.pathname.startsWith('/api/') || url.pathname === '/setup' || url.pathname === '/sipuni/raw')
+      return json(401, { error: 'Не выполнен вход' });
+    res.writeHead(302, { Location: '/login.html' });
+    return res.end();
+  }
 
   // Вебхук из амо: отвечаем сразу, разбираемся потом
   if (url.pathname === '/amo/hook') {
@@ -443,7 +522,8 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/config') {
     return json(200, {
-      managers: CONFIG.MANAGERS.map(m => ({ id: m.id, name: m.name })),
+      managers: mineOnly(CONFIG.MANAGERS.map(m => ({ id: m.id, name: m.name })), user, 'id'),
+      me: { name: user.name, role: user.role, managerId: user.managerId || null },
       mkEnabled: CONFIG.MK_ENABLED,
       configured: Boolean(CONFIG.DATE_FIELD_ID),
       callsEnabled: sipuni.enabled(),
@@ -463,11 +543,12 @@ const server = http.createServer(async (req, res) => {
       data.managers = data.managers.map(m => ({
         ...m, ...(resp[m.id] || { avgResp: null, medResp: null, matched: 0, noCall: 0, newLeads: 0 }) }));
     }
-    return json(200, data);
+    return json(200, { ...data, managers: mineOnly(data.managers || [], user, 'id') });
   }
 
   // Сырой CSV — на случай, если цифры разойдутся с кабинетом Сипуни
   if (url.pathname === '/sipuni/raw') {
+    if (!isAdmin(user)) return send(403, 'text/plain; charset=utf-8', 'Только для руководителя');
     const date = url.searchParams.get('date') || new Date().toISOString().slice(0, 10);
     try { return send(200, 'text/plain; charset=utf-8', await sipuni.raw(date)); }
     catch (e) { return send(500, 'text/plain; charset=utf-8', 'Ошибка: ' + e.message); }
@@ -480,7 +561,7 @@ const server = http.createServer(async (req, res) => {
       updatedAt: cache.updatedAt,
       error: cache.error,
       // Даты в формате YYYY-MM-DD сравниваются как строки корректно
-      items: (cache.items || []).filter(x => !from || (x.date >= from && x.date <= to)),
+      items: mineOnly((cache.items || []).filter(x => !from || (x.date >= from && x.date <= to)), user),
     });
   }
 
@@ -509,15 +590,19 @@ const server = http.createServer(async (req, res) => {
       };
     };
 
+    // Менеджеру показываем воронку только по нему: и в карточках, и в таблице
+    const own = isAdmin(user) ? null : user.managerId;
+    const scoped = own ? list.filter(l => l.m === own) : list;
+
     return json(200, {
       updatedAt: cache.updatedAt,
       error: cache.error,
-      total: count(list),
-      byManager: CONFIG.MANAGERS.map(m => ({
+      total: count(scoped),
+      byManager: mineOnly(CONFIG.MANAGERS.map(m => ({
         id: m.id, name: m.name, ...count(list.filter(l => l.m === m.id)),
-      })),
-      // Лиды, за которых никто не отвечает из отдела
-      other: count(list.filter(l => !l.m)),
+      })), user, 'id'),
+      // Лиды без ответственного — только руководителю
+      other: isAdmin(user) ? count(list.filter(l => !l.m)) : null,
     });
   }
 
@@ -529,6 +614,7 @@ const server = http.createServer(async (req, res) => {
       return json(200, { key, value: store[key] ?? null });
     }
     if (req.method === 'POST') {
+      if (!isAdmin(user)) return json(403, { error: 'Только для руководителя' });
       const body = JSON.parse(await readBody(req) || '{}');
       if (!body.key) return json(400, { error: 'Не указан ключ' });
       store[body.key] = String(body.value ?? '');
@@ -536,6 +622,7 @@ const server = http.createServer(async (req, res) => {
       return json(200, { key: body.key, ok: true });
     }
     if (req.method === 'DELETE') {
+      if (!isAdmin(user)) return json(403, { error: 'Только для руководителя' });
       if (key) { delete store[key]; saveStore(); }
       return json(200, { key, deleted: true });
     }
@@ -546,7 +633,10 @@ const server = http.createServer(async (req, res) => {
     return json(200, { keys: Object.keys(store).filter(k => k.startsWith(prefix)) });
   }
 
-  if (url.pathname === '/setup') return send(200, MIME['.html'], await setupPage());
+  if (url.pathname === '/setup') {
+    if (!isAdmin(user)) return send(403, 'text/plain; charset=utf-8', 'Только для руководителя');
+    return send(200, MIME['.html'], await setupPage());
+  }
 
   if (url.pathname === '/health') return json(200, {
     ok: true, build: BUILD,
