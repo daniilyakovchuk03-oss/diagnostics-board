@@ -366,6 +366,10 @@ html[data-theme="dark"] .amo:hover{color:#0D1117}
 .ublock h3{margin:0;padding:12px 15px;font-family:"Oswald",sans-serif;font-weight:500;font-size:13px;
   letter-spacing:.14em;text-transform:uppercase;border-bottom:2px solid var(--ink)}
 .ublock .col__list{padding:8px}
+/* Мигающий прочерк вместо цифры, пока данные грузятся */
+.skel{display:inline-block;min-width:1.4em;text-align:center;opacity:.4;animation:blink 1.1s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:.45} 50%{opacity:.12}}
+@media (prefers-reduced-motion:reduce){.skel{animation:none}}
 .mark{cursor:default}
 .card[data-status="late"]{border-left-color:var(--amber);background:var(--card-moved)}
 .stat.a b{color:var(--amber)}
@@ -516,7 +520,7 @@ const daysBetween = (a,b) => Math.round((dateOf(b)-dateOf(a))/86400000);
 
 const state = { from:isoOf(today), to:isoOf(today), items:[], filter:'all', mk:null, view:'board',
                 mkEnabled:false, configured:false, updatedAt:null, failed:false,
-                tab:'board', calls:null, funnel:null, src:'', user:null };
+                tab:'board', calls:null, funnel:null, src:'', user:null, busy:false };
 const isRange = () => state.from !== state.to;
 
 
@@ -557,6 +561,7 @@ async function loadDay(){
     const d = await getJSON(`/api/appointments?from=${state.from}&to=${state.to}`);
     state.items = d.items || []; state.updatedAt = d.updatedAt; state.failed = false;
   }catch(e){ state.failed = true; console.error('Диагностики:', e.message); }
+  state.busy = false;
   render();
 }
 
@@ -607,7 +612,7 @@ function renderCols(){
     const came = total.filter(x=>eff(x)==='came').length;
     return `<section class="col">
       <div class="col__head"><span class="col__name">${m.name}</span></div>
-      <div class="col__count"><span>Встреч <b>${total.length}</b></span><span>Дошли <b>${came}</b></span></div>
+      <div class="col__count"><span>Встреч <b>${state.busy ? SK : total.length}</b></span><span>Дошли <b>${state.busy ? SK : came}</b></span></div>
       <div class="col__list">${mine.length ? mine.map(cardHTML).join('') : '<div class="empty">Записей нет</div>'}</div>
     </section>`;
   }).join('');
@@ -626,6 +631,7 @@ function renderGrid(){
 }
 
 function renderStats(){
+  const v = x => state.busy ? SK : x;
   const a = state.items;
   const came = a.filter(x=>eff(x)==='came').length;
   const no   = a.filter(x=>eff(x)==='no').length;
@@ -633,12 +639,12 @@ function renderStats(){
   const late = a.filter(x=>eff(x)==='late').length;
   const done = came + no;
   document.getElementById('stats').innerHTML = `
-    <div class="stat"><b>${a.length}</b><span>Назначено</span></div>
-    <div class="stat g"><b>${came}</b><span>Дошли</span></div>
-    <div class="stat r"><b>${no}</b><span>Не дошли</span></div>
-    <div class="stat b"><b>${wait}</b><span>Ожидают</span></div>
-    <div class="stat a"><b>${late}</b><span>Без отметки</span></div>
-    <div class="stat"><b>${done ? Math.round(came/done*100) : 0}%</b><span>Доходимость</span></div>`;
+    <div class="stat"><b>${v(a.length)}</b><span>Назначено</span></div>
+    <div class="stat g"><b>${v(came)}</b><span>Дошли</span></div>
+    <div class="stat r"><b>${v(no)}</b><span>Не дошли</span></div>
+    <div class="stat b"><b>${v(wait)}</b><span>Ожидают</span></div>
+    <div class="stat a"><b>${v(late)}</b><span>Без отметки</span></div>
+    <div class="stat"><b>${state.busy ? SK : (done ? Math.round(came/done*100) : 0) + '%'}</b><span>Доходимость</span></div>`;
 }
 
 function renderSource(){
@@ -700,7 +706,17 @@ function renderCalls(){
   const c = state.calls;
   const box = document.getElementById('metrics');
   const top = document.getElementById('callStats');
-  if(!c){ box.innerHTML = '<div class="notice">Загружаем…</div>'; top.innerHTML=''; return; }
+  if(!c){   // данных ещё нет — рисуем тот же макет с мигающими прочерками
+    top.innerHTML = ['Попыток','Дозвонов','Дозвон','На линии']
+      .map(n=>`<div class="stat"><b>${SK}</b><span>${n}</span></div>`).join('');
+    box.innerHTML = MANAGERS.map(m=>`
+      <section class="mcol">
+        <div class="col__head"><span class="col__name">${m.name}</span></div>
+        ${['Попыток дозвониться','Дозвонов','Процент дозвона','Время на линии','Принято входящих','Реакция на новый лид']
+          .map(n=>`<div class="mrow"><span>${n}</span><b>${SK}</b></div>`).join('')}
+      </section>`).join('');
+    return;
+  }
 
   if(c.enabled === false){
     top.innerHTML = '';
@@ -744,6 +760,7 @@ function renderCalls(){
 
 /* ── Вкладка «Лиды» ───────────────────────────────────────── */
 const pct = (a,b) => b ? Math.round(a/b*100) : 0;
+const SK = '<span class="skel">—</span>';
 
 async function loadFunnel(force){
   if(!force && state.tab !== 'funnel') return;
@@ -756,7 +773,17 @@ async function loadFunnel(force){
 
 function renderFunnel(){
   const f = state.funnel, box = document.getElementById('funnel');
-  if(!f){ box.innerHTML = '<div class="notice">Загружаем…</div>'; return; }
+  if(!f){
+    const steps = ['Пришло лидов','Назначено','Дошло','Не дошло','Купили'];
+    box.innerHTML = `
+      <div class="fsteps">${steps.map(n=>
+        `<div class="fstep"><span>${n}</span><b>${SK}</b><em>&nbsp;</em></div>`).join('')}</div>
+      <div class="ftable"><table>
+        <thead><tr><th>Менеджер</th><th>Лидов</th><th>Назначено</th><th>Конверсия</th><th>Дошло</th><th>Доходимость</th><th>Купили</th></tr></thead>
+        <tbody>${MANAGERS.map(m=>`<tr><td>${m.name}</td>${'<td>'+SK+'</td>'.repeat(6)}</tr>`).join('')}</tbody>
+      </table></div>`;
+    return;
+  }
   if(f.error){ box.innerHTML = `<div class="notice warn"><b>Не удалось получить данные</b>${f.error}</div>`; return; }
   if(!f.total || !f.byManager){
     box.innerHTML = '<div class="notice warn"><b>Сервер отдал неполный ответ</b>Похоже, server.js в репозитории старой версии — обновите его.</div>';
@@ -842,6 +869,7 @@ async function loadUser(){
 function renderUser(){
   const box = document.getElementById('userBox');
   if(!MANAGERS.length){ box.innerHTML = '<div class="notice">Загружаем…</div>'; return; }
+  const busy = !state.funnel || !state.calls;
 
   const id = state.user || MANAGERS[0].id;
   const man = MANAGERS.find(m => m.id === id) || MANAGERS[0];
@@ -853,7 +881,8 @@ function renderUser(){
   const meets = state.items.filter(x => x.m === id)
     .sort((a,b)=> (a.date+a.t).localeCompare(b.date+b.t));
 
-  const row = (label, value, cls='') => `<div class="mrow ${cls}"><span>${label}</span><b>${value}</b></div>`;
+  const row = (label, value, cls='') =>
+    `<div class="mrow ${cls}"><span>${label}</span><b>${busy ? SK : value}</b></div>`;
 
   box.innerHTML = `
     <div class="controls" style="padding:0">${chips}</div>
@@ -861,28 +890,28 @@ function renderUser(){
     <div class="ucards">
       <section class="ublock">
         <h3>Лиды</h3>
-        ${fn ? [
-          row('Пришло лидов', fn.leads),
-          row('Назначено диагностик', fn.assigned),
-          row('Конверсия в назначение', pct(fn.assigned, fn.leads) + '%', 'a'),
-          row('Дошло', fn.came, 'g'),
-          row('Не дошло', fn.no),
-          row('Доходимость', pct(fn.came, fn.assigned) + '%', 'a'),
-          row('Купили', fn.won, 'g'),
+        ${(fn || busy) ? [
+          row('Пришло лидов', fn && fn.leads),
+          row('Назначено диагностик', fn && fn.assigned),
+          row('Конверсия в назначение', fn ? pct(fn.assigned, fn.leads) + '%' : '', 'a'),
+          row('Дошло', fn && fn.came, 'g'),
+          row('Не дошло', fn && fn.no),
+          row('Доходимость', fn ? pct(fn.came, fn.assigned) + '%' : '', 'a'),
+          row('Купили', fn && fn.won, 'g'),
         ].join('') : '<div class="empty">Нет данных</div>'}
       </section>
 
       <section class="ublock">
         <h3>Звонки</h3>
-        ${cl ? [
-          row('Попыток дозвониться', cl.attempts),
-          row('Дозвонов', cl.connected, 'g'),
-          row('Процент дозвона', cl.rate + '%', 'a'),
-          row('Время на линии', hhmm(cl.talkSec)),
-          row('Принято входящих', cl.incoming),
-          row('Реакция на новый лид', dur(cl.medResp)),
-          cl.matched ? row('Среднее (с учётом хвостов)', dur(cl.avgResp)) : '',
-          cl.matched ? row('Лидов в расчёте', cl.matched) : '',
+        ${(cl || busy) ? [
+          row('Попыток дозвониться', cl && cl.attempts),
+          row('Дозвонов', cl && cl.connected, 'g'),
+          row('Процент дозвона', cl ? cl.rate + '%' : '', 'a'),
+          row('Время на линии', cl ? hhmm(cl.talkSec) : ''),
+          row('Принято входящих', cl && cl.incoming),
+          row('Реакция на новый лид', cl ? dur(cl.medResp) : ''),
+          (cl && cl.matched) ? row('Среднее (с учётом хвостов)', dur(cl.avgResp)) : '',
+          (cl && cl.matched) ? row('Лидов в расчёте', cl.matched) : '',
         ].join('') : '<div class="empty">Сипуни не подключена</div>'}
       </section>
 
@@ -943,12 +972,22 @@ function setView(v){
 }
 document.getElementById('viewBoard').onclick = ()=>setView('board');
 document.getElementById('viewGrid').onclick  = ()=>setView('grid');
-function reload(){ state.calls = null; state.funnel = null; loadDay(); loadCalls(); loadFunnel(); loadUser(); }
+function reload(){
+  state.calls = null; state.funnel = null; state.busy = true;
+  render();                                   // сразу показываем прочерки
+  loadDay(); loadCalls(); loadFunnel(); loadUser();
+}
+
+/* Если быстро щёлкать по стрелкам, запрос уходит один — за последним днём */
+let navTimer = null;
 function move(dir){
   const span = daysBetween(state.from, state.to) + 1;
   state.from = shift(state.from, dir*span);
   state.to   = shift(state.to,   dir*span);
-  reload();
+  state.busy = true;
+  render();
+  clearTimeout(navTimer);
+  navTimer = setTimeout(reload, 250);
 }
 document.getElementById('prev').onclick  = ()=> move(-1);
 document.getElementById('next').onclick  = ()=> move(1);
