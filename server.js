@@ -114,6 +114,14 @@ function statusOf(lead) {
   return here > anchor ? 'came' : 'wait';
 }
 
+/* Источник лида по тегам: есть слово «звонобот» — значит бот,
+   всё остальное считаем таргетом и прочими каналами. */
+function sourceOf(lead) {
+  const tags = (lead._embedded && lead._embedded.tags) || [];
+  const bot = tags.some(t => String(t.name || '').toLowerCase().includes('звонобот'));
+  return bot ? 'bot' : 'target';
+}
+
 /* Лид для воронки: считаем по дате создания сделки, а не встречи */
 function toLead(lead) {
   const created = local(Number(lead.created_at));
@@ -125,6 +133,7 @@ function toLead(lead) {
     assigned: Boolean(raw),                 // назначена ли диагностика
     st,
     m: columnOf(lead),
+    src: sourceOf(lead),
   };
 }
 
@@ -277,12 +286,20 @@ const server = http.createServer(async (req, res) => {
     const to   = url.searchParams.get('to') || from;
     const list = cache.leads.filter(l => !from || (l.created >= from && l.created <= to));
 
-    const count = arr => ({
-      leads:    arr.length,
-      assigned: arr.filter(l => l.assigned).length,
-      came:     arr.filter(l => l.st === 'came').length,
-      no:       arr.filter(l => l.st === 'no').length,
-    });
+    /* Считаем «дошло» и «не дошло» ТОЛЬКО среди назначенных, иначе
+       воронка перестаёт быть воронкой: сделка может уехать дальше по
+       этапам без заполненной даты диагностики и дать больше 100%.
+       Такие случаи выносим отдельно — это вопрос дисциплины в амо. */
+    const count = arr => {
+      const assigned = arr.filter(l => l.assigned);
+      return {
+        leads:    arr.length,
+        assigned: assigned.length,
+        came:     assigned.filter(l => l.st === 'came').length,
+        no:       assigned.filter(l => l.st === 'no').length,
+        noDate:   arr.filter(l => !l.assigned && l.st === 'came').length,
+      };
+    };
 
     return json(200, {
       updatedAt: cache.updatedAt,
@@ -291,6 +308,10 @@ const server = http.createServer(async (req, res) => {
       byManager: CONFIG.MANAGERS.map(m => ({
         id: m.id, name: m.name, ...count(list.filter(l => l.m === m.id)),
       })),
+      bySource: [
+        { id: 'bot',    name: 'Звонобот',        ...count(list.filter(l => l.src === 'bot')) },
+        { id: 'target', name: 'Таргет и прочее', ...count(list.filter(l => l.src === 'target')) },
+      ],
       // Лиды, за которых никто не отвечает из отдела
       other: count(list.filter(l => !l.m)),
     });
