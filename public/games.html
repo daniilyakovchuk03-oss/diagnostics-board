@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Комната отдыха — NeAdPulse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+
+:root{
+  --paper:#E9EDEB;
+  --panel:#FFFFFF;
+  --frame:#333B38;
+  --frame-lit:#4C5652;
+  --ink:#12171A;
+  --muted:#6B7670;
+  --rule:#CBD4D0;
+  --rule-soft:#E2E8E5;
+
+  --green:#0F7A45;
+  --red:#C3271E;
+  --blue:#1F4FD0;
+  --amber:#B05806;
+  --lime:#7B9E2E;
+
+  --card-bg:#FFFFFF;
+  --card-came:#F4FAF6;
+  --card-no:#FCF5F4;
+  --card-moved:#FDF8F2;
+  --hover:#F3F6F4;
+  --gtime-bg:#FAFBFA;
+  --input-bg:#FFFFFF;
+  --ring:rgba(31,79,208,.14);
+  --no-opacity:.86;
+
+  --r:10px;
+  --shadow:0 1px 0 rgba(18,23,26,.04), 0 2px 8px rgba(18,23,26,.06);
+  color-scheme:light;
+}
+html[data-theme="dark"]{
+  /* Палитра в духе GitHub Dark: глубокий сине-графитовый фон */
+  --paper:#0D1117;
+  --panel:#161B22;
+  --frame:#010409;
+  --frame-lit:#161B22;
+  --ink:#E6EDF3;
+  --muted:#8B949E;
+  --rule:#30363D;
+  --rule-soft:#21262D;
+
+  --green:#3FB950;
+  --red:#F85149;
+  --blue:#388BFD;
+  --amber:#D29922;
+  --lime:#7EE787;
+
+  --card-bg:#161B22;
+  --card-came:#0F2418;
+  --card-no:#2A1517;
+  --card-moved:#2A2113;
+  --hover:#21262D;
+  --gtime-bg:#0D1117;
+  --input-bg:#0D1117;
+  --ring:rgba(56,139,253,.35);
+  --no-opacity:.72;
+
+  --shadow:0 1px 0 rgba(1,4,9,.4), 0 3px 12px rgba(1,4,9,.5);
+  color-scheme:dark;
+}
+
+:root{ --sq-light:#D8E0DB; --sq-dark:#6E8375; --sq-from:#C7D97A; --sq-to:#B7CE5F; }
+html[data-theme="dark"]{ --sq-light:#2B333C; --sq-dark:#171D24; --sq-from:#2C4A32; --sq-to:#395C3F; }
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;min-height:100%}
+body{background:var(--paper);color:var(--ink);
+  font-family:"Golos Text",system-ui,sans-serif;font-size:15px;padding:22px;
+  -webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+[hidden]{display:none !important}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:6px}
+
+.head{display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap}
+.head h1{font-family:"Oswald",sans-serif;font-weight:500;font-size:20px;letter-spacing:.16em;
+  text-transform:uppercase;margin:0}
+.head .tag{font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;
+  border:1px solid var(--rule);border-radius:99px;padding:3px 10px}
+.spacer{flex:1}
+.ghost{background:transparent;border:1px solid var(--rule);border-radius:9px;padding:8px 14px;cursor:pointer}
+.ghost:hover{border-color:var(--frame-lit);background:var(--hover)}
+
+/* ── Меню игр ── */
+.games{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;max-width:900px}
+.game{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:22px;
+  box-shadow:var(--shadow)}
+.game h2{font-family:"Oswald",sans-serif;font-weight:500;font-size:22px;letter-spacing:.08em;
+  text-transform:uppercase;margin:0 0 6px}
+.game p{color:var(--muted);font-size:13.5px;margin:0 0 18px;line-height:1.55}
+.game.soon{opacity:.55;display:grid;place-items:center;text-align:center;min-height:210px}
+.game.soon .big{font-size:40px;margin-bottom:8px}
+.levels{display:grid;gap:8px}
+.level{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;
+  background:transparent;border:1px solid var(--rule);border-radius:10px;padding:11px 14px;
+  cursor:pointer;text-align:left;transition:.15s ease}
+.level:hover{border-color:var(--blue);background:var(--hover)}
+.level b{font-size:14px}
+.level span{font-size:12px;color:var(--muted)}
+
+/* ── Игра ── */
+.play{display:grid;grid-template-columns:minmax(320px,560px) minmax(280px,1fr);gap:20px;align-items:start}
+@media (max-width:900px){.play{grid-template-columns:1fr}}
+
+.boardwrap{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:14px;
+  box-shadow:var(--shadow)}
+.board{display:grid;grid-template-columns:repeat(8,1fr);aspect-ratio:1;border-radius:8px;overflow:hidden;
+  user-select:none;position:relative}
+.board.shake{animation:shake .5s}
+@keyframes shake{
+  10%,90%{transform:translateX(-2px)} 20%,80%{transform:translateX(4px)}
+  30%,50%,70%{transform:translateX(-7px)} 40%,60%{transform:translateX(7px)}
+}
+.sq{position:relative;display:grid;place-items:center;cursor:pointer;border:0;padding:0;
+  font-size:clamp(26px,5.4vw,44px);line-height:1;background:var(--sq-light)}
+.sq.dark{background:var(--sq-dark)}
+.sq.from{background:var(--sq-from)} .sq.to{background:var(--sq-to)}
+.sq.sel{box-shadow:inset 0 0 0 3px var(--blue)}
+.sq.check{box-shadow:inset 0 0 0 3px var(--red)}
+.sq .dot{position:absolute;width:26%;height:26%;border-radius:50%;background:rgba(0,0,0,.28)}
+html[data-theme="dark"] .sq .dot{background:rgba(255,255,255,.3)}
+.sq.hit .dot{width:82%;height:82%;background:transparent;
+  box-shadow:inset 0 0 0 4px rgba(220,60,50,.75);border-radius:50%}
+.sq .p{position:relative;z-index:1;pointer-events:none}
+.p.w{color:#FFFFFF;text-shadow:0 1px 0 rgba(0,0,0,.45),0 0 3px rgba(0,0,0,.35)}
+.p.b{color:#12171A;text-shadow:0 1px 0 rgba(255,255,255,.25)}
+html[data-theme="dark"] .p.b{color:#05070A;text-shadow:0 1px 0 rgba(255,255,255,.18)}
+.coords{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;
+  font-family:"IBM Plex Mono",monospace;padding:8px 4px 0}
+
+/* ── Панель бота ── */
+.side{display:grid;gap:14px}
+.bot{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:16px;
+  box-shadow:var(--shadow)}
+.bot__top{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.face{width:52px;height:52px;border-radius:13px;display:grid;place-items:center;font-size:28px;
+  background:var(--hover);border:1px solid var(--rule);transition:.2s ease}
+.face.angry{background:var(--card-no);border-color:var(--red)}
+.face.smug{background:var(--card-came);border-color:var(--green)}
+.bot__name{font-family:"Oswald",sans-serif;font-weight:500;font-size:17px;letter-spacing:.08em;
+  text-transform:uppercase;line-height:1.1}
+.bot__mood{font-size:11.5px;color:var(--muted)}
+.bubble{background:var(--hover);border:1px solid var(--rule-soft);border-radius:12px;
+  padding:12px 14px;font-size:14px;line-height:1.5;min-height:66px;position:relative}
+.bubble.hot{border-color:var(--red);color:var(--red)}
+
+.stats2{display:flex;flex-wrap:wrap;gap:0 18px}
+.stat2{padding:10px 0;font-size:12px;color:var(--muted)}
+.stat2 b{display:block;font-family:"IBM Plex Mono",monospace;font-size:18px;color:var(--ink);
+  font-variant-numeric:tabular-nums}
+.stat2 b.up{color:var(--green)} .stat2 b.down{color:var(--red)}
+
+.beat{width:100%;background:var(--red);color:#fff;border:0;border-radius:11px;padding:13px;
+  font-weight:700;font-size:15px;cursor:pointer;letter-spacing:.02em}
+.beat:hover{filter:brightness(1.1)}
+.beat:active{transform:scale(.985)}
+.row{display:flex;gap:8px}
+.row .ghost{flex:1;text-align:center}
+
+.moves{background:var(--panel);border:1px solid var(--rule);border-radius:14px;
+  box-shadow:var(--shadow);max-height:210px;overflow:auto}
+.moves table{border-collapse:collapse;width:100%;font-family:"IBM Plex Mono",monospace;font-size:13px}
+.moves td{padding:6px 12px;border-bottom:1px solid var(--rule-soft)}
+.moves td:first-child{color:var(--muted);width:38px}
+.moves tr:last-child td{border-bottom:0}
+
+.over{position:fixed;inset:0;background:rgba(0,0,0,.55);display:grid;place-items:center;z-index:50;padding:20px}
+.over__box{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:24px;
+  max-width:380px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+.over__box h3{font-family:"Oswald",sans-serif;font-weight:500;letter-spacing:.1em;
+  text-transform:uppercase;margin:0 0 8px;font-size:20px}
+.over__box p{color:var(--muted);font-size:14px;line-height:1.55;margin:0 0 18px}
+.promo{display:flex;gap:8px;justify-content:center}
+.promo button{font-size:30px;background:var(--hover);border:1px solid var(--rule);
+  border-radius:10px;width:56px;height:56px;cursor:pointer}
+.promo button:hover{border-color:var(--blue)}
+</style>
+</head>
+<body>
+
+<div class="head">
+  <h1>Комната отдыха</h1>
+  <span class="tag">между звонками</span>
+  <span class="spacer"></span>
+  <button class="ghost" id="toMenu" hidden>В меню</button>
+  <button class="ghost" id="close">Закрыть</button>
+</div>
+
+<!-- Выбор игры -->
+<section id="menu">
+  <div class="games">
+    <div class="game">
+      <h2>Шахматы</h2>
+      <p>Против бота по имени Гроссмейстер Батыр. Характер скверный, язык без костей.
+         Выберите, насколько больно хотите проиграть.</p>
+      <div class="levels">
+        <button class="level" data-level="0"><b>Новичок</b><span>зевает, но хамит</span></button>
+        <button class="level" data-level="1"><b>Любитель</b><span>уже думает</span></button>
+        <button class="level" data-level="2"><b>Уверенный</b><span>считает на три хода</span></button>
+        <button class="level" data-level="3"><b>Зверь</b><span>лучше не надо</span></button>
+      </div>
+    </div>
+
+    <div class="game soon">
+      <div>
+        <div class="big">🕹️</div>
+        <h2>Скоро…</h2>
+        <p style="margin:0">Вторая игра в разработке</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Партия -->
+<section id="game" hidden>
+  <div class="play">
+    <div class="boardwrap">
+      <div class="board" id="board"></div>
+      <div class="coords" id="coords"></div>
+    </div>
+
+    <div class="side">
+      <div class="bot">
+        <div class="bot__top">
+          <div class="face" id="face">😏</div>
+          <div>
+            <div class="bot__name">Батыр</div>
+            <div class="bot__mood" id="mood">разминается</div>
+          </div>
+        </div>
+        <div class="bubble" id="bubble">Ну что, поехали. Только не плачь потом.</div>
+      </div>
+
+      <div class="bot">
+        <div class="stats2">
+          <div class="stat2">Ход<b id="moveNo">1</b></div>
+          <div class="stat2">Материал<b id="mat">0</b></div>
+          <div class="stat2">Битв<b id="beats">0</b></div>
+          <div class="stat2">Время<b id="clock">0:00</b></div>
+        </div>
+        <button class="beat" id="beat">ОТПИЗДИТЬ</button>
+        <div class="row" style="margin-top:8px">
+          <button class="ghost" id="again">Заново</button>
+          <button class="ghost" id="resign">Сдаться</button>
+        </div>
+      </div>
+
+      <div class="moves"><table><tbody id="moves"></tbody></table></div>
+    </div>
+  </div>
+</section>
+
+<script src="/chess-engine.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   Шахматы против Батыра. Движок лежит отдельно (chess-engine.js),
+   здесь — доска, реакции бота и кнопка, ради которой всё затевалось.
+   ═══════════════════════════════════════════════════════════════ */
+
+const E = window.ChessEngine;
+const GLYPH = { k:'♚', q:'♛', r:'♜', b:'♝', n:'♞', p:'♟' };
+
+const LEVELS = [
+  { name:'Новичок',   depth:1, blunder:.35, mood:'зевает, но хамит' },
+  { name:'Любитель',  depth:2, blunder:.12, mood:'уже думает' },
+  { name:'Уверенный', depth:3, blunder:0,   mood:'считает на три хода' },
+  { name:'Зверь',     depth:4, blunder:0,   mood:'лучше не надо' },
+];
+
+/* ── Что говорит Батыр ────────────────────────────────────────── */
+const SAY = {
+  start: [
+    'Ну что, поехали. Только не плачь потом.',
+    'Пять минут твоего времени и вся твоя самооценка. Начали.',
+    'Давай быстрее, у меня ещё три партии и обед.',
+  ],
+  idle: [
+    'Ты там уснул? Я состарился, пока ты думаешь.',
+    'Думай-думай. Это не помогает, но выглядит достойно.',
+    'Могу подсказать ход. Всё равно проиграешь, но быстрее.',
+    'В прошлый раз я так долго ждал только загрузки отчёта.',
+  ],
+  botTakes: [
+    'Спасибо, положи ещё. Мне понравилось.',
+    'Это ты специально отдал, да? Скажи, что специально.',
+    'Забрал. Не благодари.',
+    'У тебя фигуры лишние были? Теперь нет.',
+  ],
+  playerTakes: [
+    'Ладно, одну отдам. Из вежливости.',
+    'Ну взял и взял, чего радуешься.',
+    'Это была ловушка. Сложная. Ты не поймёшь.',
+    'Я это допустил. Осознанно. Правда.',
+  ],
+  botCheck: [
+    'Шах. Дыши глубже.',
+    'Королю неуютно? Это только начало.',
+    'Шах. И не говори, что не предупреждал.',
+  ],
+  playerCheck: [
+    'Шах он мне поставил, посмотрите на него.',
+    'Ой, испугал. Сейчас уйду и вернусь злее.',
+    'Ага, шах. И что дальше делать будешь?',
+  ],
+  blunder: [
+    'Это был ход? Я думал, ты просто фигуру уронил.',
+    'Интересное решение. Смелое. Плохое, но смелое.',
+    'Запиши этот ход. Потом будешь показывать внукам как не надо.',
+  ],
+  botWin: [
+    'Мат. Спасибо за игру, было почти интересно.',
+    'Всё. Иди работай, у тебя там лиды остывают.',
+    'Мат. Реванш? Или тебе на сегодня хватит?',
+  ],
+  botLose: [
+    'Так, это не считается. Лаг был.',
+    'Ладно, ты выиграл. Один раз. Случайно. Не привыкай.',
+    'Хорошо сыграл, признаю. Больше не повторится.',
+  ],
+  draw: [
+    'Ничья. Оба бездарности, зато поровну.',
+    'Ничья. Ты не выиграл, просто я не доиграл.',
+  ],
+};
+
+/* Реакция на кнопку. Зависит от того, сколько раз били,
+   сколько длится партия и кто сейчас выигрывает. */
+function beatLine(n, moves, diff, secs) {
+  if (n === 1) return ['Эй! Ты чего дерёшься? Мы в шахматы играем вообще-то.', 'angry'];
+  if (n === 2) return ['Второй раз! Я всё запоминаю, между прочим.', 'angry'];
+  if (n >= 12) return [`${n} раз. ${n}. Я уже не злюсь, мне просто интересно, что у тебя за день такой.`, 'angry'];
+  if (n >= 7) return ['Слушай, у тебя точно всё хорошо? Может, чаю?', 'angry'];
+
+  if (moves < 6) return ['Мы три хода сделали! За что?!', 'angry'];
+  if (secs > 900) return ['Час сидим, и вместо хода ты меня бьёшь. Логично.', 'angry'];
+
+  if (diff > 300) return ['Бьёшь, потому что позиция плохая? Понимаю. Не помогает, но понимаю.', 'angry'];
+  if (diff < -300) return ['Ты выигрываешь и всё равно дерёшься?! Совести нет.', 'angry'];
+
+  return [[
+    'Ай! По коню больно!',
+    'Ещё раз — и я начну играть серьёзно.',
+    'Насилие не сделает твою позицию лучше. Проверено.',
+    'Больно вообще-то. У меня чувства. Ну, почти.',
+  ][Math.floor(Math.random() * 4)], 'angry'];
+}
+
+const pick = a => a[Math.floor(Math.random() * a.length)];
+
+/* ── Состояние ────────────────────────────────────────────────── */
+let st, level, sel = null, moves = [], last = null, over = false;
+let beats = 0, rage = 0, startedAt = 0, lastMoveAt = 0, idleTimer = null, clockTimer = null;
+let pendingPromo = null;
+
+const $ = id => document.getElementById(id);
+
+function say(text, mood) {
+  const bubble = $('bubble'), face = $('face');
+  bubble.textContent = text;
+  bubble.classList.toggle('hot', mood === 'angry');
+  face.classList.toggle('angry', mood === 'angry');
+  face.classList.toggle('smug', mood === 'smug');
+  face.textContent = mood === 'angry' ? '😠' : mood === 'smug' ? '😏' : mood === 'sad' ? '😒' : '🙂';
+}
+
+function resetIdle() {
+  clearTimeout(idleTimer);
+  if (over) return;
+  idleTimer = setTimeout(() => { if (!over && st.turn === E.WHITE) say(pick(SAY.idle), 'smug'); }, 22000);
+}
+
+/* ── Доска ────────────────────────────────────────────────────── */
+function draw() {
+  const board = $('board');
+  board.innerHTML = '';
+  const targets = sel === null ? [] : E.legalMoves(st, sel);
+  const checkSq = E.inCheck(st, st.turn) ? E.kingSquare(st, st.turn) : -1;
+
+  for (let i = 0; i < 64; i++) {
+    const p = st.board[i];
+    const dark = ((i + Math.floor(i / 8)) % 2) === 1;
+    const t = targets.find(m => m.to === i);
+
+    const b = document.createElement('button');
+    b.className = 'sq' + (dark ? ' dark' : '')
+      + (last && last.from === i ? ' from' : '') + (last && last.to === i ? ' to' : '')
+      + (sel === i ? ' sel' : '') + (checkSq === i ? ' check' : '')
+      + (t && p !== '.' ? ' hit' : '');
+    b.dataset.i = i;
+    if (t) b.innerHTML = '<span class="dot"></span>';
+    if (p !== '.') {
+      const s = document.createElement('span');
+      s.className = 'p ' + (E.isWhite(p) ? 'w' : 'b');
+      s.textContent = GLYPH[p.toLowerCase()];
+      b.appendChild(s);
+    }
+    board.appendChild(b);
+  }
+
+  $('coords').innerHTML = 'abcdefgh'.split('').map(c => `<span>${c}</span>`).join('');
+  const diff = E.material(st, E.WHITE) - E.material(st, E.BLACK);
+  const mat = $('mat');
+  mat.textContent = (diff > 0 ? '+' : '') + (diff / 100).toFixed(1);
+  mat.className = diff > 0 ? 'up' : diff < 0 ? 'down' : '';
+  $('moveNo').textContent = Math.floor(moves.length / 2) + 1;
+  $('beats').textContent = beats;
+}
+
+function pushMove(mv, piece) {
+  const cap = st.board[mv.to] !== '.' || mv.ep;
+  const txt = (piece.toLowerCase() === 'p' ? '' : GLYPH[piece.toLowerCase()])
+    + (cap ? '×' : '') + E.SQ(mv.to) + (mv.promo ? '=' + GLYPH[mv.promo] : '');
+  moves.push(txt);
+  const rows = [];
+  for (let i = 0; i < moves.length; i += 2)
+    rows.push(`<tr><td>${i / 2 + 1}.</td><td>${moves[i] || ''}</td><td>${moves[i + 1] || ''}</td></tr>`);
+  $('moves').innerHTML = rows.join('');
+  $('moves').parentElement.parentElement.scrollTop = 1e6;
+}
+
+/* ── Ход человека ─────────────────────────────────────────────── */
+$('board').addEventListener('click', e => {
+  if (over || st.turn !== E.WHITE) return;
+  const cell = e.target.closest('.sq');
+  if (!cell) return;
+  const i = +cell.dataset.i;
+
+  if (sel !== null) {
+    const options = E.legalMoves(st, sel).filter(m => m.to === i);
+    if (options.length) {
+      if (options.length > 1) { pendingPromo = options; return askPromo(); }
+      return playerMove(options[0]);
+    }
+  }
+  sel = (st.board[i] !== '.' && E.colorOf(st.board[i]) === E.WHITE) ? i : null;
+  draw();
+});
+
+function askPromo() {
+  const box = document.createElement('div');
+  box.className = 'over';
+  box.innerHTML = `<div class="over__box">
+    <h3>Во что превращаем</h3>
+    <div class="promo">${['q','r','b','n'].map(p =>
+      `<button data-p="${p}">${GLYPH[p]}</button>`).join('')}</div></div>`;
+  box.addEventListener('click', ev => {
+    const b = ev.target.closest('button[data-p]');
+    if (!b) return;
+    const mv = pendingPromo.find(m => m.promo === b.dataset.p);
+    box.remove(); pendingPromo = null;
+    playerMove(mv);
+  });
+  document.body.appendChild(box);
+}
+
+function playerMove(mv) {
+  const took = st.board[mv.to];
+  const piece = st.board[mv.from];
+  pushMove(mv, piece);
+  E.apply(st, mv);
+  last = mv; sel = null;
+  lastMoveAt = Date.now();
+  draw();
+
+  if (took !== '.') say(pick(SAY.playerTakes), 'sad');
+  else if (E.inCheck(st, E.BLACK)) say(pick(SAY.playerCheck), 'angry');
+
+  if (finish()) return;
+  resetIdle();
+  setTimeout(botMove, 320);
+}
+
+/* ── Ход бота ─────────────────────────────────────────────────── */
+function botMove() {
+  if (over) return;
+  $('mood').textContent = 'думает…';
+
+  setTimeout(() => {
+    const cfg = LEVELS[level];
+    const depth = Math.min(4, cfg.depth + (rage > 0 ? 1 : 0));   // разозлённый считает глубже
+    const mv = E.bestMove(st, depth, rage > 0 ? 0 : cfg.blunder);
+    if (!mv) return finish();
+
+    const took = st.board[mv.to];
+    const piece = st.board[mv.from];
+    pushMove(mv, piece);
+    E.apply(st, mv);
+    last = mv;
+    if (rage > 0) rage--;
+    $('mood').textContent = rage > 0 ? 'кипит' : cfg.mood;
+    draw();
+
+    if (took !== '.' && E.VALUE[took.toLowerCase()] >= 300) say(pick(SAY.blunder), 'smug');
+    else if (took !== '.') say(pick(SAY.botTakes), 'smug');
+    else if (E.inCheck(st, E.WHITE)) say(pick(SAY.botCheck), 'smug');
+
+    finish();
+    resetIdle();
+  }, 120);
+}
+
+/* ── Конец партии ─────────────────────────────────────────────── */
+function finish() {
+  const state = E.gameState(st);
+  if (state === 'play') return false;
+  over = true;
+  clearTimeout(idleTimer); clearInterval(clockTimer);
+
+  const botLost = state === 'mate' && st.turn === E.BLACK;
+  const title = state === 'mate' ? (botLost ? 'Вы выиграли' : 'Мат вам')
+    : state === 'stalemate' ? 'Пат' : 'Ничья';
+  say(pick(botLost ? SAY.botLose : state === 'mate' ? SAY.botWin : SAY.draw), botLost ? 'sad' : 'smug');
+  showEnd(title);
+  return true;
+}
+
+function showEnd(title) {
+  const box = document.createElement('div');
+  box.className = 'over';
+  box.innerHTML = `<div class="over__box">
+    <h3>${title}</h3>
+    <p>${$('bubble').textContent}</p>
+    <div class="row"><button class="ghost" id="endAgain">Ещё партию</button>
+    <button class="ghost" id="endMenu">В меню</button></div></div>`;
+  box.addEventListener('click', ev => {
+    if (ev.target.id === 'endAgain') { box.remove(); start(level); }
+    if (ev.target.id === 'endMenu')  { box.remove(); toMenu(); }
+  });
+  document.body.appendChild(box);
+}
+
+/* ── Кнопка ───────────────────────────────────────────────────── */
+$('beat').addEventListener('click', () => {
+  if (over) return;
+  beats++;
+  rage = Math.min(6, rage + 2);           // злится и играет сильнее
+  const secs = Math.round((Date.now() - startedAt) / 1000);
+  const diff = E.material(st, E.BLACK) - E.material(st, E.WHITE);
+  const [text, mood] = beatLine(beats, moves.length, diff, secs);
+  say(text, mood);
+  $('mood').textContent = 'кипит';
+  const b = $('board');
+  b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
+  draw();
+});
+
+$('resign').addEventListener('click', () => {
+  if (over) return;
+  over = true; clearInterval(clockTimer);
+  say('Сдался? Ну и правильно, зачем мучиться.', 'smug');
+  showEnd('Вы сдались');
+});
+$('again').addEventListener('click', () => start(level));
+
+/* ── Запуск ───────────────────────────────────────────────────── */
+function start(l) {
+  level = l;
+  st = E.newGame();
+  moves = []; sel = null; last = null; over = false; beats = 0; rage = 0;
+  startedAt = Date.now(); lastMoveAt = Date.now();
+  $('menu').hidden = true; $('game').hidden = false; $('toMenu').hidden = false;
+  $('moves').innerHTML = '';
+  $('mood').textContent = LEVELS[l].mood;
+  say(pick(SAY.start), 'smug');
+  draw();
+  resetIdle();
+  clearInterval(clockTimer);
+  clockTimer = setInterval(() => {
+    const s = Math.round((Date.now() - startedAt) / 1000);
+    $('clock').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }, 1000);
+}
+
+function toMenu() {
+  over = true;
+  clearInterval(clockTimer); clearTimeout(idleTimer);
+  $('menu').hidden = false; $('game').hidden = true; $('toMenu').hidden = true;
+}
+
+document.querySelectorAll('.level').forEach(b => b.onclick = () => start(+b.dataset.level));
+$('toMenu').onclick = toMenu;
+$('close').onclick = () => {
+  if (window.parent !== window) window.parent.postMessage('close-games', '*');
+  else location.href = '/';
+};
+
+/* тема как в основном приложении */
+if (matchMedia('(prefers-color-scheme: light)').matches)
+  document.documentElement.dataset.theme = 'light';
+
+</script>
+</body>
+</html>
