@@ -110,7 +110,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-21.3';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-21.4';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -249,13 +249,17 @@ const normPhone = v => String(v || '').replace(/\D/g, '').slice(-10);
 
 /* Телефоны сделок: амо отдаёт у сделки только ID контактов,
    поэтому догружаем контакты пачками и собираем номера. */
+const phoneCache = new Map();     // контакт → телефоны, живёт между обновлениями
+
 async function loadPhones(leads) {
   const ids = [...new Set(leads.flatMap(l =>
     ((l._embedded && l._embedded.contacts) || []).map(c => c.id)))];
-  const byContact = new Map();
+  const byContact = phoneCache;
+  // догружаем только тех, кого ещё не знаем: раньше каждый цикл тянул все контакты заново
+  const fresh = ids.filter(id => !byContact.has(id));
 
-  for (let i = 0; i < ids.length; i += 250) {
-    const chunk = ids.slice(i, i + 250);
+  for (let i = 0; i < fresh.length; i += 250) {
+    const chunk = fresh.slice(i, i + 250);
     const q = new URLSearchParams({ limit: '250' });
     chunk.forEach(id => q.append('filter[id][]', String(id)));
     try {
@@ -265,7 +269,7 @@ async function loadPhones(leads) {
           .filter(f => f.field_code === 'PHONE')
           .flatMap(f => (f.values || []).map(v => normPhone(v.value)))
           .filter(Boolean);
-        if (phones.length) byContact.set(c.id, phones);
+        byContact.set(c.id, phones);      // пустой список тоже запоминаем, чтобы не спрашивать снова
       }
     } catch (e) {
       console.error('Не удалось получить контакты:', e.message);
