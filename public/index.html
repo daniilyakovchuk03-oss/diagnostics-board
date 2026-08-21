@@ -369,10 +369,38 @@ html[data-theme="dark"] .amo:hover{color:#0D1117}
 .ftable td:first-child{font-family:"Golos Text",sans-serif;font-weight:500}
 .ftable tr:last-child td{border-bottom:0}
 .ftable tr.dim td{color:var(--muted)}
-.ucards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;align-items:start}
+/* ── Вкладка «Пользователи» ── */
+.uwrap{display:grid;gap:16px}
+.uhead{display:flex;flex-wrap:wrap;align-items:center;gap:14px;
+  background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);
+  padding:16px 18px;box-shadow:var(--shadow)}
+.uhead__ava{width:44px;height:44px;border-radius:11px;background:var(--blue);color:#fff;
+  display:grid;place-items:center;font-family:"Oswald",sans-serif;font-size:20px;font-weight:500}
+html[data-theme="dark"] .uhead__ava{color:#0D1117}
+.uhead__name{font-family:"Oswald",sans-serif;font-weight:500;font-size:22px;
+  letter-spacing:.06em;text-transform:uppercase;line-height:1.1}
+.uhead__sub{font-size:12px;color:var(--muted)}
+
+.norms{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.norm{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);
+  padding:16px 18px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.norm.done{border-color:var(--green)}
+.norm__top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
+.norm__name{font-size:14px;font-weight:600}
+.norm__hint{font-size:11.5px;color:var(--muted);margin-top:2px}
+.norm__pct{font-family:"IBM Plex Mono",monospace;font-size:22px;font-weight:600;
+  font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap}
+.norm__fact{font-family:"IBM Plex Mono",monospace;font-size:26px;font-weight:600;
+  font-variant-numeric:tabular-nums;line-height:1;margin-bottom:9px}
+.norm__fact small{font-size:15px;color:var(--muted);font-weight:500}
+.norm__track{height:7px;background:var(--rule-soft);border-radius:4px;overflow:hidden}
+.norm__fill{display:block;height:100%;border-radius:4px;transition:width .4s ease}
+.norm__flag{display:inline-block;margin-top:9px;font-size:12px;font-weight:600}
+
+.ucards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;align-items:start}
 .ublock{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
-.ublock h3{margin:0;padding:12px 15px;font-family:"Oswald",sans-serif;font-weight:500;font-size:13px;
-  letter-spacing:.14em;text-transform:uppercase;border-bottom:2px solid var(--ink)}
+.ublock h3{margin:0;padding:13px 16px;font-family:"Oswald",sans-serif;font-weight:500;font-size:12px;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--rule-soft)}
 .ublock .col__list{padding:8px}
 /* Мигающий прочерк вместо цифры, пока данные грузятся */
 .skel{display:inline-block;min-width:1.4em;text-align:center;opacity:.4;animation:blink 1.1s ease-in-out infinite}
@@ -541,7 +569,7 @@ const daysBetween = (a,b) => Math.round((dateOf(b)-dateOf(a))/86400000);
 
 const state = { from:isoOf(today), to:isoOf(today), items:[], filter:'all', mk:null, view:'board',
                 mkEnabled:false, configured:false, updatedAt:null, failed:false,
-                tab:'board', calls:null, funnel:null, src:'', user:null, busy:false, me:null };
+                tab:'board', calls:null, funnel:null, src:'', user:null, busy:false, me:null, norms:null };
 const isRange = () => state.from !== state.to;
 
 
@@ -595,6 +623,7 @@ async function loadConfig(){
     MANAGERS = c.managers; state.mkEnabled = c.mkEnabled; state.configured = c.configured;
     state.amoDomain = c.amoDomain || '';
     state.work = c.work || [10,19];
+    state.norms = c.norms || null;
     if(c.callsEnabled === false) document.querySelector('.side__nav button[data-tab="calls"]').style.opacity = '.5';
   }catch(e){ state.failed = true; }
 }
@@ -925,59 +954,103 @@ async function loadUser(){
 function renderUser(){
   const box = document.getElementById('userBox');
   if(!MANAGERS.length){ box.innerHTML = '<div class="notice">Загружаем…</div>'; return; }
+
+  const id  = state.user || MANAGERS[0].id;
+  const man = MANAGERS.find(m => m.id === id) || MANAGERS[0];
   const busy = !state.funnel || !state.calls;
 
-  const id = state.user || MANAGERS[0].id;
-  const man = MANAGERS.find(m => m.id === id) || MANAGERS[0];
-  const chips = MANAGERS.map(m =>
-    `<button class="chip" data-user="${m.id}" aria-pressed="${m.id===id}">${m.name}</button>`).join('');
+  const chips = MANAGERS.length > 1
+    ? MANAGERS.map(m => `<button class="chip" data-user="${m.id}" aria-pressed="${m.id===id}">${m.name}</button>`).join('')
+    : '';
 
   const fn = (state.funnel && state.funnel.byManager || []).find(m => m.id === id);
-  const cl = (state.calls && state.calls.managers || []).find(m => m.id === id);
-  const meets = state.items.filter(x => x.m === id)
-    .sort((a,b)=> (a.date+a.t).localeCompare(b.date+b.t));
+  const cl = (state.calls  && state.calls.managers  || []).find(m => m.id === id);
+  const meets = state.items.filter(x => x.m === id).sort((a,b)=> (a.date+a.t).localeCompare(b.date+b.t));
+
+  const days = daysBetween(state.from, state.to) + 1;
+  const period = isRange() ? `за ${days} дн.` : 'за день';
+
+  /* ── Обязательный минимум. Только руководителю ── */
+  const normCard = (key, fact) => {
+    const n = state.norms && state.norms[key];
+    if(!n) return '';
+    const plan = n.plan * days;
+    const done = busy ? 0 : fact;
+    const p = plan ? Math.round(done / plan * 100) : 0;
+    const color = p >= 100 ? 'var(--green)' : p >= 50 ? 'var(--amber)' : 'var(--red)';
+    return `
+      <section class="norm ${p >= 100 ? 'done' : ''}">
+        <div class="norm__top">
+          <div>
+            <div class="norm__name">${n.name}</div>
+            <div class="norm__hint">норма ${n.plan} ${n.unit} в день · план ${period}: ${plan}</div>
+          </div>
+          <div class="norm__pct" style="color:${color}">${busy ? SK : p + '%'}</div>
+        </div>
+        <div class="norm__fact">${busy ? SK : done}<small> из ${plan}</small></div>
+        <div class="norm__track"><i class="norm__fill" style="width:${Math.min(100,p)}%;background:${color}"></i></div>
+        <div class="norm__flag" style="color:${color}">${
+          busy ? '' : (p >= 100 ? 'Норма выполнена' : `Не хватает ${plan - done} ${n.unit}`)
+        }</div>
+      </section>`;
+  };
+
+  const norms = state.norms ? `
+    <div class="norms">
+      ${normCard('kev', fn ? fn.came : 0)}
+      ${normCard('connects', cl ? cl.connected : 0)}
+    </div>` : '';
 
   const row = (label, value, cls='') =>
     `<div class="mrow ${cls}"><span>${label}</span><b>${busy ? SK : value}</b></div>`;
 
   box.innerHTML = `
-    <div class="controls" style="padding:0">${chips}</div>
+    <div class="uwrap">
+      ${chips ? `<div class="controls" style="padding:0">${chips}</div>` : ''}
 
-    <div class="ucards">
-      <section class="ublock">
-        <h3>Лиды</h3>
-        ${(fn || busy) ? [
-          row('Пришло лидов', fn && fn.leads),
-          row('Назначено диагностик', fn && fn.assigned),
-          row('Конверсия в назначение', fn ? pct(fn.assigned, fn.leads) + '%' : '', 'a'),
-          row('Дошло', fn && fn.came, 'g'),
-          row('Не дошло', fn && fn.no),
-          row('Доходимость', fn ? pct(fn.came, fn.assigned) + '%' : '', 'a'),
-          row('Купили', fn && fn.won, 'g'),
-        ].join('') : '<div class="empty">Нет данных</div>'}
-      </section>
-
-      <section class="ublock">
-        <h3>Звонки</h3>
-        ${(cl || busy) ? [
-          row('Попыток дозвониться', cl && cl.attempts),
-          row('Дозвонов', cl && cl.connected, 'g'),
-          row('Процент дозвона', cl ? cl.rate + '%' : '', 'a'),
-          row('Время на линии', cl ? hhmm(cl.talkSec) : ''),
-          row('Принято входящих', cl && cl.incoming),
-          row('Реакция на новый лид', cl ? dur(cl.medResp) : ''),
-          (cl && cl.matched) ? row('Среднее (с учётом хвостов)', dur(cl.avgResp)) : '',
-          (cl && cl.matched) ? row('Лидов в расчёте', cl.matched) : '',
-          (cl && cl.newLeads) ? row('Новых лидов без звонка', cl.noCall) : '',
-        ].join('') : '<div class="empty">Сипуни не подключена</div>'}
-      </section>
-
-      <section class="ublock">
-        <h3>Встречи за период · ${meets.length}</h3>
-        <div class="col__list">
-          ${meets.length ? meets.map(cardHTML).join('') : '<div class="empty">Записей нет</div>'}
+      <div class="uhead">
+        <div class="uhead__ava">${man.name.trim()[0]}</div>
+        <div>
+          <div class="uhead__name">${man.name}</div>
+          <div class="uhead__sub">${label()}</div>
         </div>
-      </section>
+      </div>
+
+      ${norms}
+
+      <div class="ucards">
+        <section class="ublock">
+          <h3>Лиды</h3>
+          ${[
+            row('Пришло лидов', fn && fn.leads),
+            row('Назначено диагностик', fn && fn.assigned),
+            row('Конверсия в назначение', fn ? pct(fn.assigned, fn.leads) + '%' : '', 'a'),
+            row('Дошло', fn && fn.came, 'g'),
+            row('Не дошло', fn && fn.no),
+            row('Доходимость', fn ? pct(fn.came, fn.assigned) + '%' : '', 'a'),
+            row('Купили', fn && fn.won, 'g'),
+          ].join('')}
+        </section>
+
+        <section class="ublock">
+          <h3>Звонки</h3>
+          ${[
+            row('Попыток дозвониться', cl && cl.attempts),
+            row('Дозвонов', cl && cl.connected, 'g'),
+            row('Процент дозвона', cl ? cl.rate + '%' : '', 'a'),
+            row('Время на линии', cl ? hhmm(cl.talkSec) : ''),
+            row('Реакция на новый лид', cl ? dur(cl.medResp) : ''),
+            (cl && cl.newLeads) ? row('Новых лидов без звонка', cl.noCall, 'a') : '',
+          ].join('')}
+        </section>
+
+        <section class="ublock">
+          <h3>Встречи ${period} · ${busy ? '' : meets.length}</h3>
+          <div class="col__list">
+            ${meets.length ? meets.map(cardHTML).join('') : '<div class="empty">Записей нет</div>'}
+          </div>
+        </section>
+      </div>
     </div>`;
 }
 
