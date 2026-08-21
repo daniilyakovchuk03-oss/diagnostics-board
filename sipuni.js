@@ -214,61 +214,72 @@ async function load(from, to) {
   return task;
 }
 
-/* ── Выгрузка месяцами ─────────────────────────────────────────
-   Раньше каждый выбранный день был отдельным обращением к Сипуни,
-   поэтому листание дней упиралось в сеть. Теперь берём месяц целиком
-   и режем нужный отрезок у себя — переключение дней внутри месяца
-   становится мгновенным, а запросов к Сипуни в разы меньше. */
+/* ── Выгрузка кусками по неделе ────────────────────────────────
+   Запрашивать месяц одним куском нельзя: на больших периодах Сипуни
+   обрезает выгрузку, и часть звонков просто теряется. Берём отрезками
+   не длиннее недели, каждый кэшируем отдельно — тогда листание дней
+   внутри уже загруженной недели мгновенное, а данные полные. */
 
-const monthsBetween = (from, to) => {
+const DAY_MS = 86400000;
+const dOf = s => Date.parse(s + 'T00:00:00Z');
+const sOf = t => new Date(t).toISOString().slice(0, 10);
+
+/* Куски строго по единой сетке недель. Это важно: тогда отдельный день
+   попадает ровно в тот же кусок, что уже загружен при просмотре месяца,
+   и переключение дней не идёт в сеть вовсе. */
+const WEEK = 7 * DAY_MS;
+const weekStart = t => Math.floor(t / WEEK) * WEEK;
+
+function chunks(from, to) {
   const out = [];
-  let [y, m] = from.split('-').map(Number);
-  const [ly, lm] = to.split('-').map(Number);
-  while (y < ly || (y === ly && m <= lm)) {
-    out.push(`${y}-${String(m).padStart(2, '0')}`);
-    if (++m > 12) { m = 1; y++; }
-    if (out.length > 24) break;                 // страховка от бесконечного цикла
+  let a = weekStart(dOf(from));
+  const end = dOf(to);
+  while (a <= end && out.length < 60) {
+    out.push([sOf(a), sOf(a + 6 * DAY_MS)]);
+    a += WEEK;
   }
   return out;
-};
-
-const monthEdges = ym => {
-  const [y, m] = ym.split('-').map(Number);
-  return [`${ym}-01`, `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`];
-};
+}
 
 /* Отбираем строки нужного отрезка по времени звонка */
 function slice(list, from, to) {
-  const start = Date.parse(from + 'T00:00:00' + (CONFIG.TZ_OFFSET || '+00:00'));
-  const end   = Date.parse(to   + 'T23:59:59' + (CONFIG.TZ_OFFSET || '+00:00'));
+  const off = CONFIG.TZ_OFFSET || '+00:00';
+  const start = Date.parse(from + 'T00:00:00' + off);
+  const end   = Date.parse(to   + 'T23:59:59' + off);
   return list.filter(r => r.at ? (r.at >= start && r.at <= end) : true);
+}
+
+async function collect(from, to) {
+  to = to || from;
+  const parts = chunks(from, to);
+  const all = [];
+  let partial = false;
+
+  for (const [a, b] of parts) {
+    const entry = await load(a, b);
+    if (entry.stats && entry.stats.error) partial = true;   // кусок не доехал
+    all.push(...entry.rows);
+  }
+  const rows = all.some(r => r.at) ? slice(all, from, to) : all;
+  return { rows, partial, parts: parts.length };
 }
 
 async function rows(from, to) {
   if (!enabled()) return [];
-  to = to || from;
-  const months = monthsBetween(from, to);
-  const all = [];
-  for (const ym of months) {
-    const [a, b] = monthEdges(ym);
-    all.push(...(await load(a, b)).rows);
-  }
-  // если время звонка не разобралось, отрезок не сузить — отдаём как есть
-  return all.some(r => r.at) ? slice(all, from, to) : all;
+  return (await collect(from, to)).rows;
 }
 
 async function stats(from, to) {
   if (!enabled()) return { enabled: false, managers: [], error: null, updatedAt: null };
-  to = to || from;
-  const list = await rows(from, to);
-  const [a] = monthEdges(monthsBetween(from, to)[0]);
-  const entry = cache.get(a + '..' + monthEdges(monthsBetween(from, to)[0])[1]);
+  const { rows: list, partial, parts } = await collect(from, to);
   return {
     enabled: true,
     managers: aggregate(list),
     total: list.length,
-    error: entry && entry.stats ? entry.stats.error : null,
-    updatedAt: entry ? new Date(entry.at).toISOString() : new Date().toISOString(),
+    partial,                       // часть выгрузки не получена — цифры занижены
+    parts,
+    error: partial ? 'Сипуни отдала не все данные за период' : null,
+    updatedAt: new Date().toISOString(),
   };
 }
 
