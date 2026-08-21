@@ -166,6 +166,8 @@ tr.sum td{font-weight:600;background:var(--gtime-bg)}
 .note{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);
   padding:14px 16px;font-size:13px;color:var(--muted);line-height:1.6;margin-top:14px}
 .note b{color:var(--ink)}
+.note.warn{border-color:var(--amber)}
+.note.warn b{color:var(--amber)}
 .skel{display:inline-block;min-width:1.4em;text-align:center;opacity:.4;animation:blink 1.1s ease-in-out infinite}
 @keyframes blink{0%,100%{opacity:.45}50%{opacity:.12}}
 @media (prefers-reduced-motion:reduce){.skel,.bar2__fill{animation:none;transition:none}}
@@ -182,6 +184,11 @@ tr.sum td{font-weight:600;background:var(--gtime-bg)}
   </div>
   <span class="spacer"></span>
   <span class="saved" id="saved">Сохранено</span>
+</div>
+
+<div class="note warn" id="partial" hidden>
+  <b>Данные за месяц неполные.</b> Сипуни отдала не всю выгрузку звонков, поэтому дозвон,
+  активность и скорость реакции занижены. Обновите страницу через минуту.
 </div>
 
 <h2>Эффективность менеджеров</h2>
@@ -419,6 +426,8 @@ function render() {
 
 function renderCards() {
   const box = document.getElementById('cards');
+  const warn = document.getElementById('partial');
+  if(warn) warn.hidden = !(state.calls && state.calls.partial);
   if (!state.managers.length) { box.innerHTML = ''; return; }
 
   const loading = !state.funnel || !state.calls;
