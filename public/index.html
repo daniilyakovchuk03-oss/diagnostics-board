@@ -765,9 +765,10 @@ function renderCalls(){
     box.innerHTML = '<div class="notice"><b>Сипуни не подключена</b>Добавьте переменные SIPUNI_USER и SIPUNI_SECRET в настройках сервиса.</div>';
     return;
   }
-  if(c.error){
+  // Неполная выгрузка — не повод прятать цифры: показываем их с предупреждением
+  if(c.error && !(c.managers && c.managers.length)){
     top.innerHTML = '';
-    box.innerHTML = '<div class="notice"><b>Не удалось получить данные</b>' + c.error + '</div>';
+    box.innerHTML = '<div class="notice warn"><b>Не удалось получить данные</b>' + c.error + '</div>';
     return;
   }
 
@@ -801,6 +802,10 @@ function renderCalls(){
     </section>`).join('');
 
   document.getElementById('metricsNote').innerHTML = `
+    ${c.partial ? `<div class="notice warn" style="text-align:left;margin-bottom:14px">
+      <b>Данные за период неполные</b>Сипуни отдала не всю выгрузку, поэтому цифры занижены.
+      Обновите страницу через минуту — недостающие куски догрузятся.
+    </div>` : ''}
     <div class="notice" style="text-align:left">
       «Реакция на новый лид» — сколько прошло от появления сделки в амо до первого исходящего звонка
       этому клиенту. Считается только <b style="display:inline">рабочее время ${w[0]}:00–${w[1]}:00</b>:
@@ -984,6 +989,9 @@ function setTab(t){
   document.getElementById('funnelView').hidden = t !== 'funnel';
   document.getElementById('usersView').hidden  = t !== 'users';
   document.getElementById('sheetView').hidden  = t !== 'sheet';
+  /* На «Эффективности» свой выбор месяца внутри страницы — верхний выбор дня
+     там ни на что не влияет и только путает, поэтому прячем его. */
+  document.querySelector('.nav').hidden = t === 'sheet';
   if(t === 'sheet'){                       // грузим таблицу только при первом открытии
     const f = document.getElementById('sheetFrame');
     if(!f.src) f.src = '/table.html';
