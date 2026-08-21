@@ -110,7 +110,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-21.1';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-21.2';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -526,6 +526,8 @@ const server = http.createServer(async (req, res) => {
       // Полный состав отдела: нужен там, где цифры общие (продажи, воронка)
       allManagers: CONFIG.MANAGERS.map(m => ({ id: m.id, name: m.name })),
       me: { name: user.name, role: user.role, managerId: user.managerId || null },
+      // Нормативы показываем только руководителю
+      norms: isAdmin(user) ? CONFIG.NORMS : null,
       mkEnabled: CONFIG.MK_ENABLED,
       configured: Boolean(CONFIG.DATE_FIELD_ID),
       callsEnabled: sipuni.enabled(),
