@@ -630,7 +630,13 @@ async function loadConfig(){
 async function loadDay(){
   try{
     const d = await getJSON(`/api/appointments?from=${state.from}&to=${state.to}`);
+    const same = state.updatedAt === d.updatedAt &&
+                 state.items.length === (d.items || []).length &&
+                 JSON.stringify(state.items) === JSON.stringify(d.items);
     state.items = d.items || []; state.updatedAt = d.updatedAt; state.failed = false;
+    // если ничего не изменилось, не трогаем разметку: без этого каждые 20 секунд
+    // доска перерисовывалась целиком и сбрасывала прокрутку
+    if(same && !state.busy) return;
   }catch(e){ state.failed = true; console.error('Диагностики:', e.message); }
   state.busy = false;
   render();
@@ -997,7 +1003,10 @@ function renderUser(){
 
   const norms = state.norms ? `
     <div class="norms">
-      ${normCard('kev', fn ? fn.came : 0)}
+      ${/* КЭВ считаем по фактически проведённым встречам периода, а не по
+            воронке: воронка группирует по дате создания лида, и диагностика
+            по вчерашнему лиду в сегодняшнюю когорту не попадает. */''}
+      ${normCard('kev', meets.filter(x => eff(x) === 'came').length)}
       ${normCard('connects', cl ? cl.connected : 0)}
     </div>` : '';
 
@@ -1173,6 +1182,41 @@ document.getElementById('popApply').onclick = ()=>{
 document.addEventListener('click', e=>{
   if(!pop.hidden && !e.target.closest('.picker')) pop.hidden = true;
 });
+
+/* ── Комната отдыха ───────────────────────────────────────────
+   Открывается тремя быстрыми кликами по логотипу. Нигде не подписана. */
+(function(){
+  const logo = document.querySelector('.side__brand h1');
+  if(!logo) return;
+  let taps = 0, timer = null;
+
+  logo.addEventListener('click', () => {
+    taps++;
+    clearTimeout(timer);
+    timer = setTimeout(() => { taps = 0; }, 700);
+    if(taps < 3) return;
+    taps = 0;
+    openGames();
+  });
+
+  function openGames(){
+    if(document.getElementById('gamesOver')) return;
+    const box = document.createElement('div');
+    box.id = 'gamesOver';
+    box.style.cssText = 'position:fixed;inset:0;z-index:80;background:var(--paper)';
+    box.innerHTML = '<iframe src="/games.html" title="Комната отдыха" ' +
+      'style="display:block;width:100%;height:100%;border:0"></iframe>';
+    document.body.appendChild(box);
+    document.addEventListener('keydown', esc);
+  }
+  function esc(e){ if(e.key === 'Escape') closeGames(); }
+  function closeGames(){
+    const box = document.getElementById('gamesOver');
+    if(box) box.remove();
+    document.removeEventListener('keydown', esc);
+  }
+  window.addEventListener('message', e => { if(e.data === 'close-games') closeGames(); });
+})();
 
 /* ── Тема ─────────────────────────────────────────────────── */
 const themeBtn = document.getElementById('theme');
