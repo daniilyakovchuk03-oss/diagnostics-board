@@ -109,34 +109,42 @@ button{font:inherit;color:inherit}
 .level span{font-size:12px;color:var(--muted)}
 
 /* ── Игра ── */
-.play{display:grid;grid-template-columns:minmax(320px,560px) minmax(280px,1fr);gap:20px;align-items:start}
-@media (max-width:900px){.play{grid-template-columns:1fr}}
+.play{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px;align-items:start;
+  max-width:1220px;margin:0 auto}
+@media (max-width:980px){.play{grid-template-columns:1fr;max-width:640px}}
 
-.boardwrap{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:14px;
-  box-shadow:var(--shadow)}
-.board{display:grid;grid-template-columns:repeat(8,1fr);aspect-ratio:1;border-radius:8px;overflow:hidden;
-  user-select:none;position:relative}
+.boardwrap{background:var(--panel);border:1px solid var(--rule);border-radius:16px;padding:16px;
+  box-shadow:var(--shadow);display:grid;justify-items:center}
+/* Доска всегда квадратная: и колонки, и строки по 1fr, иначе строки
+   подстраиваются под содержимое и клетки «плывут» */
+.board{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);
+  width:min(78vh,100%);aspect-ratio:1;border-radius:10px;overflow:hidden;
+  user-select:none;position:relative;box-shadow:0 8px 30px rgba(0,0,0,.25)}
 .board.shake{animation:shake .5s}
 @keyframes shake{
   10%,90%{transform:translateX(-2px)} 20%,80%{transform:translateX(4px)}
   30%,50%,70%{transform:translateX(-7px)} 40%,60%{transform:translateX(7px)}
 }
 .sq{position:relative;display:grid;place-items:center;cursor:pointer;border:0;padding:0;
-  font-size:clamp(26px,5.4vw,44px);line-height:1;background:var(--sq-light)}
+  aspect-ratio:1;background:var(--sq-light);transition:box-shadow .12s ease}
 .sq.dark{background:var(--sq-dark)}
 .sq.from{background:var(--sq-from)} .sq.to{background:var(--sq-to)}
 .sq.sel{box-shadow:inset 0 0 0 3px var(--blue)}
 .sq.check{box-shadow:inset 0 0 0 3px var(--red)}
-.sq .dot{position:absolute;width:26%;height:26%;border-radius:50%;background:rgba(0,0,0,.28)}
-html[data-theme="dark"] .sq .dot{background:rgba(255,255,255,.3)}
-.sq.hit .dot{width:82%;height:82%;background:transparent;
-  box-shadow:inset 0 0 0 4px rgba(220,60,50,.75);border-radius:50%}
-.sq .p{position:relative;z-index:1;pointer-events:none}
-.p.w{color:#FFFFFF;text-shadow:0 1px 0 rgba(0,0,0,.45),0 0 3px rgba(0,0,0,.35)}
-.p.b{color:#12171A;text-shadow:0 1px 0 rgba(255,255,255,.25)}
-html[data-theme="dark"] .p.b{color:#05070A;text-shadow:0 1px 0 rgba(255,255,255,.18)}
-.coords{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;
-  font-family:"IBM Plex Mono",monospace;padding:8px 4px 0}
+.sq .dot{position:absolute;width:24%;height:24%;border-radius:50%;background:rgba(0,0,0,.26)}
+html[data-theme="dark"] .sq .dot{background:rgba(255,255,255,.26)}
+.sq.hit .dot{width:84%;height:84%;background:transparent;border-radius:50%;
+  box-shadow:inset 0 0 0 4px rgba(220,70,60,.7)}
+.sq .lbl{position:absolute;font-size:10px;font-family:"IBM Plex Mono",monospace;
+  opacity:.55;pointer-events:none;line-height:1}
+.sq .lbl.f{right:4px;bottom:3px} .sq .lbl.r{left:4px;top:3px}
+
+/* Фигуры рисуем векторно — тогда они одинаковы в любой системе */
+.sq svg{width:82%;height:82%;display:block;pointer-events:none;
+  filter:drop-shadow(0 2px 2px rgba(0,0,0,.35))}
+.p-w{fill:#F6F8F7;stroke:#0E1317;stroke-width:1.6;stroke-linejoin:round}
+.p-b{fill:#1A2026;stroke:#59636D;stroke-width:1.6;stroke-linejoin:round}
+html[data-theme="dark"] .p-b{fill:#121A22;stroke:#7C8B97}
 
 /* ── Панель бота ── */
 .side{display:grid;gap:14px}
@@ -226,7 +234,6 @@ html[data-theme="dark"] .p.b{color:#05070A;text-shadow:0 1px 0 rgba(255,255,255,
   <div class="play">
     <div class="boardwrap">
       <div class="board" id="board"></div>
-      <div class="coords" id="coords"></div>
     </div>
 
     <div class="side">
@@ -268,7 +275,29 @@ html[data-theme="dark"] .p.b{color:#05070A;text-shadow:0 1px 0 rgba(255,255,255,
    ═══════════════════════════════════════════════════════════════ */
 
 const E = window.ChessEngine;
-const GLYPH = { k:'♚', q:'♛', r:'♜', b:'♝', n:'♞', p:'♟' };
+const GLYPH = { k:'♚', q:'♛', r:'♜', b:'♝', n:'♞', p:'♟' };   // для записи ходов
+
+/* Фигуры: классические силуэты в системе координат 45×45.
+   Рисуем сами, а не берём символы шрифта — так они выглядят
+   одинаково в Safari, Chrome и на телефоне. */
+const SHAPE = {
+  p: '<circle cx="22.5" cy="14" r="4.6"/><path d="M18.6 18.6h7.8l1.2 2.2c-1.4 1-2.3 2.6-2.3 4.4 0 2.6 1.6 5.2 3.4 6.8l1.1 3.5H15.2l1.1-3.5c1.8-1.6 3.4-4.2 3.4-6.8 0-1.8-.9-3.4-2.3-4.4z"/>',
+  r: '<path d="M12 9.5h4.2v3h4.2v-3h4.2v3h4.2v-3H33v7.5l-2.6 2.6v10.8l2.6 2.6v3.5H12v-3.5l2.6-2.6V19.6L12 17z"/><path d="M17.4 19.6h10.2v10.8H17.4z" fill-opacity=".28" stroke="none"/>',
+  n: '<path d="M20 10.5c.6 1.7.3 3.3-.8 4.6-1.6 2-4.4 4.2-5.4 6.6-.8 2 .1 3.6 1.9 3.6 1.6 0 3.1-.9 4.4-2.2l.9 2.3c-2.9 2.2-6.2 4.6-7.3 8.2-.4 1.3-.6 2.6-.6 3.9h18.6c.4-6.4-.3-11.6-2.2-15.6-1.9-4-5-6.9-9.2-8.6z"/><circle cx="16.4" cy="20.9" r="1.15" fill-opacity=".75" stroke="none"/>',
+  b: '<circle cx="22.5" cy="10.4" r="2.5"/><path d="M22.5 13.2c4.6 2.6 7.6 6.8 7.6 11 0 3-1.4 5.4-3.3 7h-8.6c-1.9-1.6-3.3-4-3.3-7 0-4.2 3-8.4 7.6-11z"/><path d="M15.6 31.2h13.8l1.4 4.3H14.2z"/><path d="M22.5 17.5v6.4M19.3 20.7h6.4" fill="none" stroke-linecap="round" stroke-width="1.6"/>',
+  q: '<circle cx="9" cy="12.6" r="2.1"/><circle cx="16" cy="9.6" r="2.1"/><circle cx="22.5" cy="8.4" r="2.3"/><circle cx="29" cy="9.6" r="2.1"/><circle cx="36" cy="12.6" r="2.1"/><path d="M9.6 15.2 13 27.4h19L35.4 15.2l-5.1 5.6-2.9-8.4-2.7 8-2.2-8-2.2 8-2.7-8-2.9 8.4z"/><path d="M13 27.4h19l1 4.2H12z"/><path d="M12.6 32.6h19.8l1.2 3H11.4z"/>',
+  k: '<path d="M22.5 5.4v7.2M19.1 8.4h6.8" fill="none" stroke-linecap="round" stroke-width="2.2"/><circle cx="22.5" cy="15.2" r="2.4"/><path d="M22.5 17.4c-4.3 0-7.6 3-8.3 7-.5 3.1.6 6 2.1 8.6h12.4c1.5-2.6 2.6-5.5 2.1-8.6-.7-4-4-7-8.3-7z"/><path d="M14.6 32.6h15.8l1.5 3H13.1z"/>',
+  base: '<path d="M11.5 39.5h22a1 1 0 0 1 0 3h-22a1 1 0 0 1 0-3z"/><path d="M13.5 35.5h18l1.6 4h-21.2z"/>',
+};
+
+const piece = (p) => {
+  const low = p.toLowerCase();
+  return `<svg viewBox="0 0 45 45" aria-hidden="true">
+    <g class="${isW(p) ? 'p-w' : 'p-b'}">${SHAPE[low]}${SHAPE.base}</g></svg>`;
+};
+const isW = p => p === p.toUpperCase();
+
+
 
 const LEVELS = [
   { name:'Новичок',   depth:1, blunder:.35, mood:'зевает, но хамит' },
@@ -363,6 +392,7 @@ let beats = 0, rage = 0, startedAt = 0, lastMoveAt = 0, idleTimer = null, clockT
 let pendingPromo = null;
 
 const $ = id => document.getElementById(id);
+const RANKOF = i => (i / 8) | 0;
 
 function say(text, mood) {
   const bubble = $('bubble'), face = $('face');
@@ -398,16 +428,15 @@ function draw() {
       + (t && p !== '.' ? ' hit' : '');
     b.dataset.i = i;
     if (t) b.innerHTML = '<span class="dot"></span>';
-    if (p !== '.') {
-      const s = document.createElement('span');
-      s.className = 'p ' + (E.isWhite(p) ? 'w' : 'b');
-      s.textContent = GLYPH[p.toLowerCase()];
-      b.appendChild(s);
-    }
+    if (p !== '.') b.insertAdjacentHTML('beforeend', piece(p));
+    // координаты прямо на клетках, как на настоящей доске
+    if (RANKOF(i) === 7) b.insertAdjacentHTML('beforeend',
+      `<span class="lbl f">${'abcdefgh'[i % 8]}</span>`);
+    if (i % 8 === 0) b.insertAdjacentHTML('beforeend',
+      `<span class="lbl r">${8 - RANKOF(i)}</span>`);
     board.appendChild(b);
   }
 
-  $('coords').innerHTML = 'abcdefgh'.split('').map(c => `<span>${c}</span>`).join('');
   const diff = E.material(st, E.WHITE) - E.material(st, E.BLACK);
   const mat = $('mat');
   mat.textContent = (diff > 0 ? '+' : '') + (diff / 100).toFixed(1);
