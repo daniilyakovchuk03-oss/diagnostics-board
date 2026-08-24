@@ -70,6 +70,10 @@ module.exports = {
                  разбор эффективности ему не показывается */
   USERS: [
     { login: 'admin',   name: 'Администратор', role: 'admin',   passwordEnv: 'ADMIN_PASSWORD' },
+    { login: 'baha',    name: 'Баха',    role: 'admin',   passwordEnv: 'BAHA_PASSWORD' },
+    { login: 'baga',    name: 'Бага',    role: 'admin',   passwordEnv: 'BAGA_PASSWORD' },
+    { login: 'asqar',   name: 'Асқар',   role: 'admin',   passwordEnv: 'ASQAR_PASSWORD' },
+    { login: 'dias',    name: 'Диас',    role: 'admin',   passwordEnv: 'DIAS_PASSWORD' },
     { login: 'tair',    name: 'Таир',    role: 'manager', managerId: 'tair',    passwordEnv: 'TAIR_PASSWORD' },
     { login: 'dulat',   name: 'Дулат',   role: 'manager', managerId: 'dulat',   passwordEnv: 'DULAT_PASSWORD' },
     { login: 'sanzhar', name: 'Санжар',  role: 'manager', managerId: 'sanzhar', passwordEnv: 'SANZHAR_PASSWORD' },
@@ -88,6 +92,9 @@ module.exports = {
 
   // Этап «Успешно реализовано» — считаем его покупкой
   WON_STATUS_ID: 142,
+
+  // Этап «Закрыто и не реализовано» — ЗНР
+  LOST_STATUS_ID: 143,
 
   // Колонка мастер-классов слева. В амо пока нет привязки к МК.
   MK_ENABLED: false,
