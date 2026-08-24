@@ -369,6 +369,8 @@ html[data-theme="dark"] .amo:hover{color:#0D1117}
 .ftable td:first-child{font-family:"Golos Text",sans-serif;font-weight:500}
 .ftable tr:last-child td{border-bottom:0}
 .ftable tr.dim td{color:var(--muted)}
+.fsub{font-family:"Oswald",sans-serif;font-weight:500;font-size:12px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted);margin:6px 0 -4px}
 /* ── Вкладка «Пользователи» ── */
 .uwrap{display:grid;gap:16px}
 .uhead{display:flex;flex-wrap:wrap;align-items:center;gap:14px;
@@ -883,6 +885,12 @@ function renderFunnel(){
 
   const t = f.total;
 
+  const w = f.work || null;
+  // «коснулись» приходит из Сипуни: она грузится дольше, поэтому может быть прочерк
+  const cm = (state.calls && state.calls.managers) || null;
+  const byCalls = id => { const c = cm && cm.find(x => x.id === id); return c ? (c.clients ?? 0) : null; };
+  const clients = cm ? cm.reduce((a, c) => a + (c.clients || 0), 0) : null;
+
   const srcChips = [['','Все'],['target','Таргет и прочее'],['bot','Звонобот']].map(([v,n])=>
     `<button class="chip" data-src="${v}" aria-pressed="${state.src===v}">${n}</button>`).join('');
 
@@ -895,10 +903,15 @@ function renderFunnel(){
       <td>${m.came}</td>
       <td>${pct(m.came, m.assigned)}%</td>
       <td>${m.won}</td>
+      ${w ? `<td>${byCalls(m.id) === null ? SK : byCalls(m.id)}</td>
+             <td>${(w.byManager[m.id]||{}).touched ?? 0}</td>
+             <td>${(w.byManager[m.id]||{}).meetings ?? 0}</td>
+             <td>${(w.byManager[m.id]||{}).lost ?? 0} <span style="color:var(--muted)">${
+               pct((w.byManager[m.id]||{}).lost, (w.byManager[m.id]||{}).touched)}%</span></td>` : ''}
     </tr>`).join('');
 
   const other = f.other && f.other.leads
-    ? `<tr class="dim"><td>Без ответственного из отдела</td><td>${f.other.leads}</td><td>${f.other.assigned}</td><td>${pct(f.other.assigned,f.other.leads)}%</td><td>${f.other.came}</td><td>${pct(f.other.came,f.other.assigned)}%</td><td>${f.other.won}</td></tr>`
+    ? `<tr class="dim"><td>Без ответственного из отдела</td><td>${f.other.leads}</td><td>${f.other.assigned}</td><td>${pct(f.other.assigned,f.other.leads)}%</td><td>${f.other.came}</td><td>${pct(f.other.came,f.other.assigned)}%</td><td>${f.other.won}</td>${w ? '<td>—</td><td>—</td><td>—</td><td>—</td>' : ''}</tr>`
     : '';
 
   box.innerHTML = `
@@ -927,10 +940,36 @@ function renderFunnel(){
       </div>
     </div>
 
+    ${w ? `
+    <h3 class="fsub">Сделано за период</h3>
+    <div class="fsteps">
+      <div class="fstep">
+        <span>Коснулись клиентов</span><b>${clients === null ? SK : clients}</b>
+        <em>уникальных номеров в обзвоне</em>
+      </div>
+      <div class="fstep a">
+        <span>Двигали сделок</span><b>${w.total.touched}</b>
+        <em>включая пришедшие раньше</em>
+      </div>
+      <div class="fstep g">
+        <span>Провели диагностик</span><b>${w.total.meetings}</b>
+        <em>встречи этого периода</em>
+      </div>
+      <div class="fstep blue">
+        <span>Закрыли продаж</span><b>${w.total.won}</b>
+        <em>сделок в «успешно реализовано»</em>
+      </div>
+      <div class="fstep r">
+        <span>Ушло в ЗНР</span><b>${w.total.lost}</b>
+        <em>${pct(w.total.lost, w.total.touched)}% от обработанных</em>
+      </div>
+    </div>` : ''}
+
     <div class="ftable">
       <table>
         <thead><tr>
           <th>Менеджер</th><th>Лидов</th><th>Назначено</th><th>Конверсия</th><th>Дошло</th><th>Доходимость</th><th>Купили</th>
+          ${w ? '<th>Коснулись</th><th>Двигали</th><th>Провели</th><th>ЗНР</th>' : ''}
         </tr></thead>
         <tbody>${rows}${other}</tbody>
       </table>
@@ -1081,7 +1120,7 @@ function setTab(t){
   document.getElementById('stats').hidden = t !== 'board';
   document.getElementById('wrap').hidden  = t !== 'board';
   if(t === 'calls'){ renderCalls(); loadCalls(); }
-  if(t === 'funnel'){ renderFunnel(); loadFunnel(); }
+  if(t === 'funnel'){ renderFunnel(); loadFunnel(); loadCalls(true); }
   if(t === 'users'){ renderUser(); loadUser(); }
 }
 document.querySelectorAll('.side__nav button').forEach(b=> b.onclick = ()=> setTab(b.dataset.tab));
