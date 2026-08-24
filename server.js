@@ -110,7 +110,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-21.5';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-21.6';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -237,8 +237,12 @@ function toLead(lead, phones) {
     st,
     m: columnOf(lead),
     src: sourceOf(lead),
-    won: Number(lead.status_id) === Number(CONFIG.WON_STATUS_ID),
+    won:  Number(lead.status_id) === Number(CONFIG.WON_STATUS_ID),
+    lost: Number(lead.status_id) === Number(CONFIG.LOST_STATUS_ID),   // ЗНР
     createdTs: Number(lead.created_at) * 1000,          // для расчёта времени реакции
+    // когда сделку трогали последний раз; если амо не прислала — берём дату создания,
+    // иначе такие сделки молча выпадали бы из «сделано за период»
+    updated: (local(lead.updated_at) || created).date,
     phones: (phones && phones.get(lead.id)) || [],
   };
 }
@@ -600,9 +604,25 @@ const server = http.createServer(async (req, res) => {
 
     /* Воронка общая для всех: сколько лидов пришло на отдел и как они
        распределились. Это командные цифры, менеджеру полезно их видеть. */
+    /* Работа за период — в отличие от воронки считается не по дате
+       появления лида, а по факту действий: какие сделки двигали,
+       какие встречи провели. Так видно работу со старой базой. */
+    const touched = (cache.leads || []).filter(l => !from || (l.updated >= from && l.updated <= to));
+    const held = (cache.items || []).filter(x =>
+      (!from || (x.date >= from && x.date <= to)) && x.st === 'came');
+
+    const work = who => ({
+      touched: touched.filter(l => !who || l.m === who).length,
+      meetings: held.filter(x => !who || x.m === who).length,
+      won:  touched.filter(l => l.won  && (!who || l.m === who)).length,
+      lost: touched.filter(l => l.lost && (!who || l.m === who)).length,
+    });
+
     return json(200, {
       updatedAt: cache.updatedAt,
       error: cache.error,
+      work: { total: work(null), byManager: Object.fromEntries(
+        CONFIG.MANAGERS.map(m => [m.id, work(m.id)])) },
       total: count(list),
       byManager: CONFIG.MANAGERS.map(m => ({
         id: m.id, name: m.name, ...count(list.filter(l => l.m === m.id)),
