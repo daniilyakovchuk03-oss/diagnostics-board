@@ -195,7 +195,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-25.5';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-25.6';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -266,6 +266,7 @@ function toAppointment(lead) {
     src: sourceOf(lead),                    // откуда пришёл лид — показываем на карточке
     won:  Number(lead.status_id) === Number(CONFIG.WON_STATUS_ID),   // купил — ставим знак на карточке
     lost: Number(lead.status_id) === Number(CONFIG.LOST_STATUS_ID),  // ушёл в ЗНР
+    statusId: Number(lead.status_id),        // текущий этап — подсвечиваем в раскрытой карточке
     st: statusOf(lead),
     mk: '',
     note: '',
@@ -277,14 +278,18 @@ function toAppointment(lead) {
    считается состоявшейся встречей. Исключения — в STATUS_OVERRIDE.
    Так новые этапы подхватятся сами, без правки конфига. */
 let stageOrder = {};   // { status_id: позиция }
+let stageInfo  = {};   // { status_id: { name, color } } — цвета берём те же, что в амо
 
 async function loadStages() {
   if (!CONFIG.PIPELINE_ID) return;
   try {
     const p = await amo(`/api/v4/leads/pipelines/${CONFIG.PIPELINE_ID}`);
     const list = (p && p._embedded && p._embedded.statuses) || [];
-    stageOrder = {};
-    for (const s of list) stageOrder[s.id] = s.sort;
+    stageOrder = {}; stageInfo = {};
+    for (const s of list) {
+      stageOrder[s.id] = s.sort;
+      stageInfo[s.id] = { name: s.name, color: s.color || null, sort: s.sort };
+    }
     console.log(`Этапы воронки загружены: ${list.length}`);
   } catch (e) {
     console.error('Не удалось загрузить этапы воронки:', e.message);
@@ -509,6 +514,45 @@ function finishResponse(out) {
     };
   }
   return res;
+}
+
+/* ── История этапов сделки ──────────────────────────────────────
+   Амо хранит журнал событий: когда и с какого этапа на какой
+   переводили сделку. Тянем по одной карточке и только когда её
+   раскрыли — грузить это для всей доски незачем. */
+const historyCache = new Map();
+
+function statusOfEvent(v) {
+  const o = Array.isArray(v) ? v[0] : v;
+  const st = o && (o.lead_status || o.leads_status || o.status);
+  return st && st.id ? Number(st.id) : null;
+}
+
+async function leadHistory(id) {
+  const hit = historyCache.get(id);
+  if (hit && Date.now() - hit.at < 120000) return hit.list;
+
+  const q = new URLSearchParams({ limit: '100' });
+  q.set('filter[entity]', 'lead');
+  q.append('filter[entity_id][]', String(id));
+  q.set('filter[type]', 'lead_status_changed');
+
+  let list = [];
+  try {
+    const data = await amo('/api/v4/events?' + q);
+    list = ((data && data._embedded && data._embedded.events) || [])
+      .map(e => ({
+        at: Number(e.created_at) * 1000,
+        from: statusOfEvent(e.value_before),
+        to: statusOfEvent(e.value_after),
+      }))
+      .filter(x => x.to)
+      .sort((a, b) => a.at - b.at);
+  } catch (e) {
+    console.error('История сделки', id, '→', e.message);
+  }
+  historyCache.set(id, { at: Date.now(), list });
+  return list;
 }
 
 /* ── Страница /setup ───────────────────────────────────────── */
@@ -762,6 +806,27 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/store/list') {
     const prefix = url.searchParams.get('prefix') || '';
     return json(200, { keys: Object.keys(store).filter(k => k.startsWith(prefix)) });
+  }
+
+  /* Подробности по одной сделке: путь по этапам и текущее положение */
+  if (url.pathname === '/api/lead') {
+    const id = Number(url.searchParams.get('id'));
+    if (!id) return json(400, { error: 'Не указана сделка' });
+
+    const lead = (cache.leads || []).find(l => l.id === id);
+    // менеджеру отдаём только его сделки
+    if (!isAdmin(user) && (!lead || lead.m !== user.managerId))
+      return json(403, { error: 'Чужая сделка' });
+
+    const history = await leadHistory(id);
+    const item = (cache.items || []).find(x => x.id === id);
+    const current = item ? item.statusId : null;
+
+    return json(200, {
+      id, history, current,
+      stages: stageInfo,
+      created: lead ? lead.createdTs : null,
+    });
   }
 
   if (url.pathname === '/setup') {
