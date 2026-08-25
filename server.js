@@ -195,7 +195,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-25.8';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-25.10';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -267,6 +267,7 @@ function toAppointment(lead) {
     won:  Number(lead.status_id) === Number(CONFIG.WON_STATUS_ID),   // купил — ставим знак на карточке
     lost: Number(lead.status_id) === Number(CONFIG.LOST_STATUS_ID),  // ушёл в ЗНР
     statusId: Number(lead.status_id),        // текущий этап — подсвечиваем в раскрытой карточке
+    outcome: CONFIG.OUTCOME_FIELD_ID ? (field(lead, CONFIG.OUTCOME_FIELD_ID) || null) : null,
     st: statusOf(lead),
     mk: '',
     note: '',
@@ -318,7 +319,21 @@ async function loadStages() {
   }
 }
 
+/* Итог диагностики, проставленный менеджером руками, — самый надёжный
+   источник: он говорит о том, что было на самом деле, а не о том,
+   куда переехала карточка. Поэтому смотрим его первым. */
+function outcomeOf(lead) {
+  if (!CONFIG.OUTCOME_FIELD_ID) return null;
+  const raw = field(lead, CONFIG.OUTCOME_FIELD_ID);
+  if (!raw) return null;
+  const key = String(raw).trim().toLowerCase().replace(/\s+/g, ' ');
+  return (CONFIG.OUTCOME_MAP || {})[key] || null;
+}
+
 function statusOf(lead) {
+  const outcome = outcomeOf(lead);
+  if (outcome) return outcome;                         // заполненный итог важнее всего
+
   const id = lead.status_id;
   const override = CONFIG.STATUS_OVERRIDE[id];
   if (override) return override;                       // явное правило важнее порядка
