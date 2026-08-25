@@ -17,6 +17,91 @@ const path = require('path');
 const CONFIG = require('./config');
 const sipuni = require('./sipuni');
 
+/* ── Уведомления в Телеграм ─────────────────────────────────────
+   Бот пишет в общую группу о каждом новом лиде. Отметку о последнем
+   отправленном храним на диске, иначе после перезапуска сервис
+   заново разошлёт вчерашние заявки. */
+const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
+const TG_CHAT  = process.env.TELEGRAM_CHAT  || '';
+const tgReady = () => Boolean(TG_TOKEN && TG_CHAT);
+
+const esc = t => String(t == null ? '' : t)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+async function tgSend(text, button) {
+  if (!tgReady()) return { ok: false, error: 'Не заданы TELEGRAM_TOKEN и TELEGRAM_CHAT' };
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: TG_CHAT, text, parse_mode: 'HTML', disable_web_page_preview: true,
+        ...(button ? { reply_markup: { inline_keyboard: [[button]] } } : {}),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!data.ok) console.error('Телеграм отказал:', data.description || res.status);
+    return data;
+  } catch (e) {
+    console.error('Телеграм недоступен:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+const MARK = 'tg:lastLead';            // ключ в хранилище
+
+function tgMark() {
+  try { return JSON.parse(store[MARK] || '{}'); } catch { return {}; }
+}
+
+/* Рассылаем только по-настоящему новые заявки. При первом запуске
+   ничего не шлём — просто запоминаем точку отсчёта, иначе бот
+   вывалит в группу всю базу. */
+async function notifyNewLeads() {
+  if (!tgReady()) return;
+  const leads = cache.leads || [];
+  if (!leads.length) return;
+
+  const mark = tgMark();
+  const sent = new Set(mark.ids || []);
+  const since = mark.ts || 0;
+
+  if (!mark.ts) {
+    store[MARK] = JSON.stringify({ ts: Math.max(...leads.map(l => l.createdTs || 0)), ids: [] });
+    saveStore();
+    console.log('Телеграм: отметка выставлена, старые лиды не рассылаем');
+    return;
+  }
+
+  const fresh = leads
+    .filter(l => l.createdTs > since && !sent.has(l.id))
+    .sort((a, b) => a.createdTs - b.createdTs);
+  if (!fresh.length) return;
+
+  // если разом накопилось много — шлём сводку, а не сорок сообщений подряд
+  if (fresh.length > 8) {
+    await tgSend(`🔥 <b>Новых лидов: ${fresh.length}</b>\nПоявились разом — смотрите доску.`,
+      { text: 'Открыть доску', url: `https://${DOMAIN.replace('.amocrm.ru', '')}` });
+  } else {
+    for (const l of fresh) {
+      const man = CONFIG.MANAGERS.find(m => m.id === l.m);
+      const when = local(l.createdTs / 1000);
+      await tgSend(
+        `🔥 <b>Новый лид</b>\n` +
+        `${esc(l.name || 'Без имени')}\n` +
+        `Ответственный: <b>${esc(man ? man.name : 'не из отдела')}</b>\n` +
+        `Источник: ${l.src === 'bot' ? 'Звонобот' : 'Таргет и прочее'}` +
+        (when ? `\nВремя: ${when.time}` : ''),
+        { text: 'Открыть в амо', url: `https://${DOMAIN}/leads/detail/${l.id}` });
+    }
+  }
+
+  const ids = [...sent, ...fresh.map(l => l.id)].slice(-300);
+  store[MARK] = JSON.stringify({ ts: Math.max(since, ...fresh.map(l => l.createdTs)), ids });
+  saveStore();
+  console.log(`Телеграм: отправлено уведомлений — ${Math.min(fresh.length, 9)}`);
+}
+
 /* ── Вход и права ───────────────────────────────────────────────
    Пароли берём из переменных окружения. Сессия — подписанная кука:
    подделать её без секрета нельзя, база для этого не нужна. */
@@ -110,7 +195,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-25.1';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-25.2';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -239,6 +324,7 @@ function toLead(lead, phones) {
     src: sourceOf(lead),
     won:  Number(lead.status_id) === Number(CONFIG.WON_STATUS_ID),
     lost: Number(lead.status_id) === Number(CONFIG.LOST_STATUS_ID),   // ЗНР
+    name: field(lead, CONFIG.NAME_FIELD_ID) || lead.name || '',
     createdTs: Number(lead.created_at) * 1000,          // для расчёта времени реакции
     // когда сделку трогали последний раз; если амо не прислала — берём дату создания,
     // иначе такие сделки молча выпадали бы из «сделано за период»
@@ -313,6 +399,7 @@ async function refresh() {
       error: null,
     };
     console.log(`Обновлено: сделок ${leads.length}, встреч на доске ${cache.items.length}`);
+    notifyNewLeads();
   } catch (e) {
     cache.error = e.message;
     console.error('Ошибка обновления:', e.message);
@@ -679,12 +766,30 @@ const server = http.createServer(async (req, res) => {
     return send(200, MIME['.html'], await setupPage());
   }
 
+  /* Служебное: посмотреть, куда бот может писать, и отправить проверку */
+  if (url.pathname === '/tg/chats') {
+    if (!isAdmin(user)) return send(403, 'text/plain; charset=utf-8', 'Только для руководителя');
+    if (!TG_TOKEN) return json(200, { error: 'Не задан TELEGRAM_TOKEN' });
+    const r = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/getUpdates`);
+    const d = await r.json().catch(() => ({}));
+    const chats = [...new Map((d.result || [])
+      .map(u => u.message || u.my_chat_member || u.channel_post)
+      .filter(Boolean).map(m => [m.chat.id, { id: m.chat.id, type: m.chat.type, title: m.chat.title || m.chat.username }]))
+      .values()];
+    return json(200, { chats, подсказка: 'Напишите что-нибудь в группу и обновите страницу' });
+  }
+  if (url.pathname === '/tg/test') {
+    if (!isAdmin(user)) return send(403, 'text/plain; charset=utf-8', 'Только для руководителя');
+    return json(200, await tgSend('✅ Проверка связи. Бот на месте, уведомления о лидах будут приходить сюда.'));
+  }
+
   if (url.pathname === '/health') return json(200, {
     ok: true, build: BUILD,
     items: (cache.items || []).length,
     leads: (cache.leads || []).length,
     stages: Object.keys(stageOrder).length,
     updatedAt: cache.updatedAt, error: cache.error,
+    telegram: tgReady() ? 'подключён' : 'не настроен',
   });
 
   // Статика доски
