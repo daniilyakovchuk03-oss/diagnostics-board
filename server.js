@@ -195,7 +195,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-25.2';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-25.3';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -263,6 +263,7 @@ function toAppointment(lead) {
     t: when.time,
     m: col,
     c: field(lead, CONFIG.NAME_FIELD_ID) || lead.name || 'Без имени',
+    src: sourceOf(lead),                    // откуда пришёл лид — показываем на карточке
     st: statusOf(lead),
     mk: '',
     note: '',
