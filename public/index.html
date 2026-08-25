@@ -210,6 +210,33 @@ html[data-theme="dark"] .add{color:#0D1117}
 
 /* Правый блок: обе отметки одной высоты — край карточки ровный */
 .card__side{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.expand{
+  width:28px;height:28px;border-radius:7px;border:1px solid var(--rule);
+  background:var(--panel);color:var(--muted);display:grid;place-items:center;
+  cursor:pointer;padding:0;flex:0 0 auto;transition:.15s ease;
+}
+.expand:hover{border-color:var(--blue);color:var(--blue)}
+.expand[aria-expanded="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
+.expand[aria-expanded="true"] svg{transform:rotate(180deg)}
+html[data-theme="dark"] .expand[aria-expanded="true"]{color:#0D1117}
+.expand svg{transition:transform .18s ease}
+
+/* Раскрытая карточка: путь сделки по этапам воронки */
+.card__more{grid-column:1/-1;margin-top:9px;padding-top:10px;border-top:1px solid var(--rule-soft)}
+.more__title{font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:8px}
+.more__load{font-size:12.5px;color:var(--muted);padding:2px 0 8px}
+.steps{display:grid;gap:6px;position:relative}
+.step{display:flex;align-items:center;gap:9px}
+.step__time{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--muted);
+  min-width:74px;flex:0 0 auto}
+.stg{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11.5px;font-weight:600;
+  color:#12171A;line-height:1.55;white-space:nowrap;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
+.stg.now{box-shadow:inset 0 0 0 1px rgba(0,0,0,.2), 0 0 0 2px var(--blue)}
+.step:not(.now){opacity:.72}
+.more__foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
+.more__hint{font-size:11px;color:var(--muted)}
 .mark{
   width:28px;height:28px;border-radius:7px;border:1px dashed var(--rule);
   background:transparent;display:grid;place-items:center;padding:0;flex:0 0 auto;
@@ -595,7 +622,7 @@ const daysBetween = (a,b) => Math.round((dateOf(b)-dateOf(a))/86400000);
 
 const state = { from:isoOf(today), to:isoOf(today), items:[], filter:'all', mk:null, view:'board',
                 mkEnabled:false, configured:false, updatedAt:null, failed:false,
-                tab:'board', calls:null, funnel:null, src:'', user:null, busy:false, me:null, norms:null };
+                tab:'board', calls:null, funnel:null, src:'', user:null, busy:false, me:null, norms:null, open:new Set(), details:{} };
 const isRange = () => state.from !== state.to;
 
 
@@ -690,6 +717,7 @@ const shortDate = s => dateOf(s).toLocaleDateString('ru-RU',{day:'numeric',month
 
 function cardHTML(x){
   const st = eff(x);
+  const open = state.open.has(x.id);
   const srcName = x.src === 'bot' ? 'Звонобот' : x.src === 'target' ? 'Таргет и прочее' : null;
   const meta = [isRange() ? shortDate(x.date) : null, x.mk ? 'МК '+x.mk : null].filter(Boolean).join(' · ');
 
@@ -713,9 +741,73 @@ function cardHTML(x){
     </div>
     <div class="card__side">
       <span class="mark" title="${STATUS_NAME[st]}" aria-label="${STATUS_NAME[st]}">${markSVG(st)}</span>
-      ${url ? `<a class="amo" href="${url}" target="_blank" rel="noopener" title="Открыть сделку в amoCRM">amo</a>` : ''}
+      <button class="expand" data-open="${x.id}" aria-expanded="${open}" title="Подробнее о сделке">
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7.5 10 12.5 15 7.5"/></svg>
+      </button>
     </div>
+    ${open ? `<div class="card__more">${detailsHTML(x, url)}</div>` : ''}
   </article>`;
+}
+
+/* Путь сделки по этапам. Цвета берём из амо — те же, что видят
+   менеджеры в воронке, чтобы не пришлось привыкать заново. */
+function detailsHTML(x, url){
+  const d = state.details[x.id];
+  const amoBtn = url
+    ? `<a class="amo" href="${url}" target="_blank" rel="noopener">amo</a>` : '';
+
+  if (!d) return `<div class="more__load">Загружаем историю…</div>`;
+  if (d.error) return `<div class="more__load">${d.error}</div><div class="more__foot">${amoBtn}</div>`;
+
+  const stages = d.stages || {};
+  const chip = (id, extra='') => {
+    const st = stages[id] || {};
+    const color = st.color || 'var(--rule)';
+    return `<span class="stg ${extra}" style="background:${color}">${st.name || 'этап ' + id}</span>`;
+  };
+
+  // из журнала берём каждый переход; если журнала нет, показываем хотя бы текущий этап
+  const steps = d.history.length
+    ? d.history.map(h => ({ id: h.to, at: h.at }))
+    : (x.statusId ? [{ id: x.statusId, at: null }] : []);
+
+  // добавляем стартовый этап, с которого началось движение
+  const first = d.history.length && d.history[0].from ? [{ id: d.history[0].from, at: d.created }] : [];
+  const all = first.concat(steps);
+
+  const rows = all.map((s2, i) => `
+    <div class="step ${i === all.length - 1 ? 'now' : ''}">
+      <span class="step__time">${s2.at ? shortDateTime(s2.at) : '—'}</span>
+      ${chip(s2.id, i === all.length - 1 ? 'now' : '')}
+    </div>`).join('');
+
+  return `
+    <div class="more__title">Путь по воронке</div>
+    <div class="steps">${rows || '<div class="more__load">Переходов пока не было</div>'}</div>
+    <div class="more__foot">
+      <span class="more__hint">${all.length > 1 ? `${all.length} этапов` : 'один этап'}</span>
+      ${amoBtn}
+    </div>`;
+}
+
+const shortDateTime = ms => {
+  const d = new Date(ms);
+  return d.toLocaleDateString('ru-RU', {day:'numeric', month:'short'}) + ' ' +
+         d.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+};
+
+async function openCard(id){
+  if (state.open.has(id)) { state.open.delete(id); return render(); }
+  state.open.add(id);
+  render();
+  if (state.details[id]) return;
+  try{
+    state.details[id] = await getJSON('/api/lead?id=' + id);
+  }catch(e){
+    state.details[id] = { error: 'Не удалось получить историю: ' + e.message };
+  }
+  render();
 }
 
 function renderCols(){
@@ -1175,6 +1267,8 @@ scrim.onclick = closeSide;
 
 /* ── События ──────────────────────────────────────────────── */
 document.addEventListener('click', e=>{
+  const ex = e.target.closest('.expand');
+  if(ex){ openCard(Number(ex.dataset.open)); return; }
   const uc = e.target.closest('.chip[data-user]');
   if(uc){ state.user = uc.dataset.user; renderUser(); return; }
   const sc = e.target.closest('.chip[data-src]');
@@ -1255,6 +1349,8 @@ document.getElementById('popApply').onclick = ()=>{
 
 // Клик мимо окошка закрывает его
 document.addEventListener('click', e=>{
+  const ex = e.target.closest('.expand');
+  if(ex){ openCard(Number(ex.dataset.open)); return; }
   if(!pop.hidden && !e.target.closest('.picker')) pop.hidden = true;
 });
 
