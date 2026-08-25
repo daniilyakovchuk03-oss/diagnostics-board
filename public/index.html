@@ -348,7 +348,12 @@ textarea{resize:vertical;min-height:52px}
 .pop__foot{display:flex;gap:8px;justify-content:flex-end}
 .card__date{font-size:11px;color:var(--muted);font-family:"IBM Plex Mono",monospace}
 /* Кнопка перехода в сделку amoCRM */
-.card{grid-template-columns:auto 1fr auto auto}
+.card{grid-template-columns:auto 1fr auto auto auto}
+/* Оплаченная сделка: жёлтый доллар рядом с отметкой о приходе */
+.paid{display:grid;place-items:center;width:26px;height:26px;align-self:center;
+  color:var(--amber);border-radius:6px;background:color-mix(in srgb, var(--amber) 14%, transparent)}
+html[data-theme="dark"] .paid{background:rgba(210,153,34,.16)}
+.card[data-status="came"].paid-row{border-left-color:var(--amber)}
 .amo{
   display:grid;place-items:center;width:34px;height:26px;border-radius:6px;
   border:1px solid var(--rule);background:var(--panel);color:var(--muted);
@@ -696,6 +701,11 @@ function cardHTML(x){
       ${from ? `<div class="card__src ${x.src}">${from}</div>` : ''}
       ${x.note ? `<div class="card__note">${x.note}</div>` : ''}
     </div>
+    ${x.won ? `<span class="paid" title="Сделка оплачена" aria-label="Оплачено">
+      <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 2.6v14.8M13.4 6.1c-.6-1.1-1.9-1.7-3.4-1.7-2 0-3.4 1-3.4 2.6 0 3.6 7.1 2 7.1 5.7 0 1.7-1.5 2.8-3.7 2.8-1.7 0-3.1-.7-3.7-1.9"/>
+      </svg></span>` : ''}
     <span class="mark" title="${STATUS_NAME[st]}" aria-label="${STATUS_NAME[st]}">${markSVG(st)}</span>
     ${url ? `<a class="amo" href="${url}" target="_blank" rel="noopener" title="Открыть сделку в amoCRM">amo</a>` : ''}
   </article>`;
