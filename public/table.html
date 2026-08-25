@@ -116,6 +116,8 @@ h2:first-of-type{margin-top:0}
 .bar2__track{height:5px;background:var(--rule-soft);border-radius:3px;overflow:hidden}
 .bar2__fill{height:100%;border-radius:3px;transition:width .4s ease}
 .bar2__hint{font-size:11px;color:var(--muted)}
+.bar2.miss{opacity:.5}
+.bar2.miss .bar2__val{font-family:"Golos Text",sans-serif;font-size:12px;font-weight:500;color:var(--amber)}
 .card2__foot{margin-top:auto;padding:12px 16px;border-top:1px solid var(--rule-soft)}
 .why{width:100%;background:transparent;border:1px solid var(--rule);border-radius:9px;
   padding:9px 12px;cursor:pointer;font-size:13px;font-weight:500;transition:.15s ease;
@@ -261,7 +263,7 @@ const elapsedDays = () => {
 };
 
 /* ── Загрузка ─────────────────────────────────────────────────── */
-async function getJSON(url, ms = 45000) {
+async function getJSON(url, ms = 90000) {
   const stop = new AbortController();
   const timer = setTimeout(() => stop.abort(), ms);
   try {
@@ -358,7 +360,10 @@ function scoreOf(m) {
   }
 
   const total = parts.length ? Math.round(parts.reduce((a, p) => a + p.score, 0) / parts.length) : 0;
-  return { total, parts };
+  /* Показателей всего пять. Если часть данных не пришла, оценка считается
+     по остатку — и это обязательно надо показать, иначе выпадение слабых
+     показателей само по себе «поднимает» эффективность. */
+  return { total, parts, of: Object.keys(GOALS).length };
 }
 
 const scoreColor = s => s >= 80 ? 'var(--green)' : s >= 55 ? 'var(--amber)' : 'var(--red)';
@@ -427,7 +432,15 @@ function render() {
 function renderCards() {
   const box = document.getElementById('cards');
   const warn = document.getElementById('partial');
-  if(warn) warn.hidden = !(state.calls && state.calls.partial);
+  const noCalls = state.calls && (state.calls.error || !(state.calls.managers || []).length);
+  if (warn) {
+    warn.hidden = !(state.calls && (state.calls.partial || noCalls));
+    warn.innerHTML = noCalls
+      ? '<b>Звонки не загрузились.</b> Дозвон, активность и скорость реакции в оценку не вошли — ' +
+        'эффективность посчитана только по лидам. Обновите страницу через минуту.'
+      : '<b>Данные за месяц неполные.</b> Сипуни отдала не всю выгрузку звонков, поэтому дозвон, ' +
+        'активность и скорость реакции занижены. Обновите страницу через минуту.';
+  }
   if (!state.managers.length) { box.innerHTML = ''; return; }
 
   const loading = !state.funnel || !state.calls;
@@ -440,12 +453,22 @@ function renderCards() {
     const bars = !sc ? ['','','',''].map(() => `
         <div class="bar2"><div class="bar2__top"><span>${SK}</span><span class="bar2__val">${SK}</span></div>
         <div class="bar2__track"></div></div>`).join('')
-      : sc.parts.map(p => `
-        <div class="bar2">
-          <div class="bar2__top"><span>${p.name}</span><span class="bar2__val">${p.value}</span></div>
-          <div class="bar2__track"><i class="bar2__fill" style="width:${p.score}%;background:${scoreColor(p.score)};display:block"></i></div>
-          <div class="bar2__hint">ориентир ${GOALS[p.key].target}${p.key === 'speed' ? ' мин' : (p.key === 'activity' ? ' в день' : '%')}</div>
-        </div>`).join('');
+      : Object.keys(GOALS).map(key => {
+          const p = sc.parts.find(x => x.key === key);
+          const unit = key === 'speed' ? ' мин' : (key === 'activity' ? ' в день' : '%');
+          if (!p) return `
+            <div class="bar2 miss">
+              <div class="bar2__top"><span>${GOALS[key].name}</span><span class="bar2__val">нет данных</span></div>
+              <div class="bar2__track"></div>
+              <div class="bar2__hint">ориентир ${GOALS[key].target}${unit} · в оценку не вошло</div>
+            </div>`;
+          return `
+            <div class="bar2">
+              <div class="bar2__top"><span>${p.name}</span><span class="bar2__val">${p.value}</span></div>
+              <div class="bar2__track"><i class="bar2__fill" style="width:${p.score}%;background:${scoreColor(p.score)};display:block"></i></div>
+              <div class="bar2__hint">ориентир ${GOALS[key].target}${unit}</div>
+            </div>`;
+        }).join('');
 
     const adv = (opened && m && isAdmin()) ? `<div class="advice">${advice(m, sc).map(a => `
         <div class="adv ${a.level}"><b>${a.title}</b><span>${a.text}</span></div>`).join('')}</div>` : '';
@@ -455,7 +478,9 @@ function renderCards() {
         <div class="card2__head">
           <span class="card2__name">${man.name}</span>
           <span class="score" style="color:${sc ? scoreColor(sc.total) : 'var(--muted)'}">
-            ${sc ? sc.total + '%' : SK}<small>эффективность</small>
+            ${sc ? sc.total + '%' : SK}<small>${
+              sc && sc.parts.length < sc.of ? `по ${sc.parts.length} из ${sc.of}` : 'эффективность'
+            }</small>
           </span>
         </div>
         <div class="bars">${bars}</div>
