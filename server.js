@@ -110,7 +110,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-21.6';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-25.1';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -564,6 +564,22 @@ const server = http.createServer(async (req, res) => {
     const date = url.searchParams.get('date') || new Date().toISOString().slice(0, 10);
     try { return send(200, 'text/plain; charset=utf-8', await sipuni.raw(date)); }
     catch (e) { return send(500, 'text/plain; charset=utf-8', 'Ошибка: ' + e.message); }
+  }
+
+  /* Пульс: самый свежий лид, видимый этому пользователю.
+     Доска опрашивает его раз в несколько секунд и подаёт звук.
+     Ответ считается из памяти, поэтому запрос дешёвый. */
+  if (url.pathname === '/api/pulse') {
+    const mine = mineOnly(cache.leads || [], user);
+    let newest = null;
+    for (const l of mine) if (!newest || l.createdTs > newest.createdTs) newest = l;
+    return json(200, {
+      at: newest ? newest.createdTs : 0,
+      id: newest ? newest.id : null,
+      m: newest ? newest.m : null,
+      today: mine.filter(l => l.created === new Date().toISOString().slice(0, 10)).length,
+      updatedAt: cache.updatedAt,
+    });
   }
 
   if (url.pathname === '/api/appointments') {
