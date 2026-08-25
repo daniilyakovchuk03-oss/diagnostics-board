@@ -195,7 +195,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-25.10';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-25.11';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -282,6 +282,7 @@ let stageOrder = {};   // { status_id: позиция }
 let stageInfo  = {};   // { status_id: { name, color } } — цвета берём те же, что в амо
 
 let userNames = {};     // { user_id: имя } — кто двигал сделку
+let outcomeField = null;   // поле «Итог диагностики» — находим сами, по названию
 
 async function loadStages() {
   try {
@@ -310,6 +311,24 @@ async function loadStages() {
     console.error('Не удалось загрузить этапы:', e.message);
   }
 
+  /* Ищем поле «Итог диагностики» по названию: так его не нужно
+     прописывать вручную, и оно не потеряется, если поле пересоздадут. */
+  try {
+    if (CONFIG.OUTCOME_FIELD_ID) {
+      outcomeField = { id: CONFIG.OUTCOME_FIELD_ID, name: 'задано в настройках' };
+    } else {
+      const f = await amo('/api/v4/leads/custom_fields?limit=250');
+      const list = (f && f._embedded && f._embedded.custom_fields) || [];
+      const hit = list.find(x => /итог.*диагност/i.test(String(x.name || '')));
+      outcomeField = hit ? { id: hit.id, name: hit.name } : null;
+      console.log(outcomeField
+        ? `Поле итога найдено: «${outcomeField.name}» (${outcomeField.id})`
+        : 'Поле «Итог диагностики» в амо не найдено — статусы считаются по этапам');
+    }
+  } catch (e) {
+    console.error('Не удалось получить список полей:', e.message);
+  }
+
   try {
     const u = await amo('/api/v4/users?limit=250');
     userNames = {};
@@ -323,11 +342,20 @@ async function loadStages() {
    источник: он говорит о том, что было на самом деле, а не о том,
    куда переехала карточка. Поэтому смотрим его первым. */
 function outcomeOf(lead) {
-  if (!CONFIG.OUTCOME_FIELD_ID) return null;
-  const raw = field(lead, CONFIG.OUTCOME_FIELD_ID);
+  const fid = CONFIG.OUTCOME_FIELD_ID || (outcomeField && outcomeField.id);
+  if (!fid) return null;
+  const raw = field(lead, fid);
   if (!raw) return null;
-  const key = String(raw).trim().toLowerCase().replace(/\s+/g, ' ');
-  return (CONFIG.OUTCOME_MAP || {})[key] || null;
+
+  const key = String(raw).trim().toLowerCase().replace(/[.,;!]/g, '').replace(/\s+/g, ' ');
+  const exact = (CONFIG.OUTCOME_MAP || {})[key];
+  if (exact) return exact;
+
+  /* Точного совпадения нет — разбираем по смыслу. Так формулировку
+     в амо можно менять, не трогая настройки. */
+  if (/не\s*(был|записыв|приш|дош|яв)/.test(key)) return 'no';
+  if (/(^|\s)(был|приш|дош|провед|провел|состоя)/.test(key)) return 'came';
+  return null;
 }
 
 function statusOf(lead) {
@@ -896,6 +924,7 @@ const server = http.createServer(async (req, res) => {
     stages: Object.keys(stageOrder).length,
     updatedAt: cache.updatedAt, error: cache.error,
     telegram: tgReady() ? 'подключён' : 'не настроен',
+    outcomeField: outcomeField || 'не найдено',
   });
 
   // Статика доски
