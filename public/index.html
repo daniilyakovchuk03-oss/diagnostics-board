@@ -227,9 +227,14 @@ html[data-theme="dark"] .expand[aria-expanded="true"]{color:#0D1117}
   color:var(--muted);margin-bottom:8px}
 .more__load{font-size:12.5px;color:var(--muted);padding:2px 0 8px}
 .steps{display:grid;gap:6px;position:relative}
-.step{display:flex;align-items:center;gap:9px}
+.step{display:flex;align-items:flex-start;gap:9px}
+.step__body{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.step__pipe{font-size:10.5px;color:var(--muted);border:1px solid var(--rule);
+  border-radius:99px;padding:0 6px}
+.step__held{font-size:10.5px;color:var(--muted);font-family:"IBM Plex Mono",monospace}
+.step__by{font-size:10.5px;color:var(--muted)}
 .step__time{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--muted);
-  min-width:74px;flex:0 0 auto}
+  min-width:74px;flex:0 0 auto;padding-top:3px}
 .stg{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11.5px;font-weight:600;
   color:#12171A;line-height:1.55;white-space:nowrap;
   box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
@@ -754,42 +759,59 @@ function cardHTML(x){
    менеджеры в воронке, чтобы не пришлось привыкать заново. */
 function detailsHTML(x, url){
   const d = state.details[x.id];
-  const amoBtn = url
-    ? `<a class="amo" href="${url}" target="_blank" rel="noopener">amo</a>` : '';
+  const amoBtn = url ? `<a class="amo" href="${url}" target="_blank" rel="noopener">amo</a>` : '';
 
   if (!d) return `<div class="more__load">Загружаем историю…</div>`;
   if (d.error) return `<div class="more__load">${d.error}</div><div class="more__foot">${amoBtn}</div>`;
 
   const stages = d.stages || {};
-  const chip = (id, extra='') => {
-    const st = stages[id] || {};
-    const color = st.color || 'var(--rule)';
-    return `<span class="stg ${extra}" style="background:${color}">${st.name || 'этап ' + id}</span>`;
-  };
 
-  // из журнала берём каждый переход; если журнала нет, показываем хотя бы текущий этап
+  // из журнала берём переходы; если журнала нет — показываем текущий этап
   const steps = d.history.length
-    ? d.history.map(h => ({ id: h.to, at: h.at }))
-    : (x.statusId ? [{ id: x.statusId, at: null }] : []);
-
-  // добавляем стартовый этап, с которого началось движение
-  const first = d.history.length && d.history[0].from ? [{ id: d.history[0].from, at: d.created }] : [];
+    ? d.history.map(h => ({ id: h.to, at: h.at, by: h.by }))
+    : (x.statusId ? [{ id: x.statusId, at: null, by: null }] : []);
+  const first = d.history.length && d.history[0].from
+    ? [{ id: d.history[0].from, at: d.created, by: null }] : [];
   const all = first.concat(steps);
 
-  const rows = all.map((s2, i) => `
-    <div class="step ${i === all.length - 1 ? 'now' : ''}">
-      <span class="step__time">${s2.at ? shortDateTime(s2.at) : '—'}</span>
-      ${chip(s2.id, i === all.length - 1 ? 'now' : '')}
-    </div>`).join('');
+  const rows = all.map((s2, i) => {
+    const st = stages[s2.id] || {};
+    const last = i === all.length - 1;
+    // сколько сделка провисела на этапе: до следующего перехода или до сих пор
+    const till = last ? Date.now() : all[i + 1].at;
+    const held = s2.at && till ? spanText(till - s2.at) : '';
+    return `
+      <div class="step ${last ? 'now' : ''}">
+        <span class="step__time">${s2.at ? shortDateTime(s2.at) : '—'}</span>
+        <span class="step__body">
+          <span class="stg ${last ? 'now' : ''}" style="background:${st.color || 'var(--rule)'}">${
+            st.name || 'этап ' + s2.id}</span>
+          ${st.pipeline ? `<span class="step__pipe">${st.pipeline}</span>` : ''}
+          ${held ? `<span class="step__held">${held}</span>` : ''}
+          ${s2.by ? `<span class="step__by">${s2.by}</span>` : ''}
+        </span>
+      </div>`;
+  }).join('');
 
   return `
     <div class="more__title">Путь по воронке</div>
     <div class="steps">${rows || '<div class="more__load">Переходов пока не было</div>'}</div>
     <div class="more__foot">
-      <span class="more__hint">${all.length > 1 ? `${all.length} этапов` : 'один этап'}</span>
+      <span class="more__hint">${all.length > 1 ? `${all.length} этапов` : 'один этап'}${
+        d.created ? ' · создан ' + shortDateTime(d.created) : ''}</span>
       ${amoBtn}
     </div>`;
 }
+
+/* «2 дня», «4 ч», «35 мин» — сколько сделка провела на этапе */
+const spanText = ms => {
+  const m = Math.round(ms / 60000);
+  if (m < 60) return m + ' мин';
+  const h = Math.round(m / 60);
+  if (h < 24) return h + ' ч';
+  const dd = Math.round(h / 24);
+  return dd + (dd % 10 === 1 && dd % 100 !== 11 ? ' день' : (dd % 10 >= 2 && dd % 10 <= 4 && (dd % 100 < 10 || dd % 100 >= 20) ? ' дня' : ' дней'));
+};
 
 const shortDateTime = ms => {
   const d = new Date(ms);
