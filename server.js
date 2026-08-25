@@ -195,7 +195,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-25.7';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-25.8';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -280,19 +280,41 @@ function toAppointment(lead) {
 let stageOrder = {};   // { status_id: позиция }
 let stageInfo  = {};   // { status_id: { name, color } } — цвета берём те же, что в амо
 
+let userNames = {};     // { user_id: имя } — кто двигал сделку
+
 async function loadStages() {
-  if (!CONFIG.PIPELINE_ID) return;
   try {
-    const p = await amo(`/api/v4/leads/pipelines/${CONFIG.PIPELINE_ID}`);
-    const list = (p && p._embedded && p._embedded.statuses) || [];
+    /* Берём этапы ВСЕХ воронок, а не только нашей: сделка могла ходить
+       по другим воронкам, и без справочника её путь выглядел бы как
+       безымянные серые этапы. */
+    const p = await amo('/api/v4/leads/pipelines');
+    const pipes = (p && p._embedded && p._embedded.pipelines) || [];
     stageOrder = {}; stageInfo = {};
-    for (const s of list) {
-      stageOrder[s.id] = s.sort;
-      stageInfo[s.id] = { name: s.name, color: s.color || null, sort: s.sort };
+    let total = 0;
+
+    for (const pipe of pipes) {
+      const own = Number(pipe.id) === Number(CONFIG.PIPELINE_ID);
+      for (const st of ((pipe._embedded && pipe._embedded.statuses) || [])) {
+        // порядок этапов нужен только для нашей воронки — по нему считаем статусы
+        if (own) stageOrder[st.id] = st.sort;
+        stageInfo[st.id] = {
+          name: st.name, color: st.color || null, sort: st.sort,
+          pipeline: own ? null : pipe.name,     // чужую воронку подписываем
+        };
+        total++;
+      }
     }
-    console.log(`Этапы воронки загружены: ${list.length}`);
+    console.log(`Этапы загружены: ${total} из ${pipes.length} воронок`);
   } catch (e) {
-    console.error('Не удалось загрузить этапы воронки:', e.message);
+    console.error('Не удалось загрузить этапы:', e.message);
+  }
+
+  try {
+    const u = await amo('/api/v4/users?limit=250');
+    userNames = {};
+    for (const x of ((u && u._embedded && u._embedded.users) || [])) userNames[x.id] = x.name;
+  } catch (e) {
+    console.error('Не удалось загрузить сотрудников:', e.message);
   }
 }
 
@@ -545,6 +567,7 @@ async function leadHistory(id) {
         at: Number(e.created_at) * 1000,
         from: statusOfEvent(e.value_before),
         to: statusOfEvent(e.value_after),
+        by: userNames[e.created_by] || null,      // кто перевёл сделку
       }))
       .filter(x => x.to)
       .sort((a, b) => a.at - b.at);
