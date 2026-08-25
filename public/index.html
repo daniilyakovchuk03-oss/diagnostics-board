@@ -223,6 +223,11 @@ html[data-theme="dark"] .expand[aria-expanded="true"]{color:#0D1117}
 
 /* Раскрытая карточка: путь сделки по этапам воронки */
 .card__more{grid-column:1/-1;margin-top:9px;padding-top:10px;border-top:1px solid var(--rule-soft)}
+.more__outcome{display:flex;align-items:baseline;gap:8px;margin-bottom:10px;
+  padding:7px 10px;border-radius:8px;background:var(--hover)}
+.more__outcome b{font-size:13px}
+.more__label{font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted)}
 .more__title{font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
   color:var(--muted);margin-bottom:8px}
 .more__load{font-size:12.5px;color:var(--muted);padding:2px 0 8px}
@@ -794,6 +799,10 @@ function detailsHTML(x, url){
   }).join('');
 
   return `
+    ${x.outcome ? `<div class="more__outcome">
+      <span class="more__label">Итог диагностики</span>
+      <b>${x.outcome}</b>
+    </div>` : ''}
     <div class="more__title">Путь по воронке</div>
     <div class="steps">${rows || '<div class="more__load">Переходов пока не было</div>'}</div>
     <div class="more__foot">
@@ -819,17 +828,24 @@ const shortDateTime = ms => {
          d.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
 };
 
+/* Карточки живут на двух вкладках, поэтому перерисовываем ту,
+   которая сейчас открыта: render() знает только про доску. */
+function repaint(){
+  if (state.tab === 'users') renderUser();
+  else render();
+}
+
 async function openCard(id){
-  if (state.open.has(id)) { state.open.delete(id); return render(); }
+  if (state.open.has(id)) { state.open.delete(id); return repaint(); }
   state.open.add(id);
-  render();
+  repaint();
   if (state.details[id]) return;
   try{
     state.details[id] = await getJSON('/api/lead?id=' + id);
   }catch(e){
     state.details[id] = { error: 'Не удалось получить историю: ' + e.message };
   }
-  render();
+  repaint();
 }
 
 function renderCols(){
