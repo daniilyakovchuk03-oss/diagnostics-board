@@ -408,6 +408,15 @@ html[data-theme="dark"] .uhead__ava{color:#0D1117}
 .skel{display:inline-block;min-width:1.4em;text-align:center;opacity:.4;animation:blink 1.1s ease-in-out infinite}
 @keyframes blink{0%,100%{opacity:.45} 50%{opacity:.12}}
 @media (prefers-reduced-motion:reduce){.skel{animation:none}}
+/* Уведомление о новом лиде */
+.toasts{position:fixed;right:18px;top:70px;z-index:90;display:grid;gap:10px;max-width:330px}
+.toast{background:var(--panel);border:1px solid var(--green);border-left-width:4px;
+  border-radius:12px;padding:13px 15px;box-shadow:0 12px 34px rgba(0,0,0,.35);
+  animation:slidein .25s ease}
+@keyframes slidein{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
+.toast b{display:block;font-size:14px;margin-bottom:2px}
+.toast span{font-size:12.5px;color:var(--muted)}
+.theme.off{opacity:.45}
 .mark{cursor:default}
 .card[data-status="late"]{border-left-color:var(--amber);background:var(--card-moved)}
 .stat.a b{color:var(--amber)}
@@ -423,6 +432,7 @@ html[data-theme="dark"] .uhead__ava{color:#0D1117}
 <body>
 
 <div class="scrim" id="scrim"></div>
+<div class="toasts" id="toasts"></div>
 <div class="app">
 
 <aside class="side" id="side">
@@ -496,6 +506,7 @@ html[data-theme="dark"] .uhead__ava{color:#0D1117}
   </div>
   <div class="src">
     <span class="dot" id="dot"></span> <span id="srcText">подключение…</span>
+    <button id="bell" class="theme" title="Звук при новом лиде" aria-label="Звук при новом лиде"></button>
     <button id="theme" class="theme" title="Сменить тему" aria-label="Сменить тему"></button>
   </div>
 </header>
@@ -1221,6 +1232,77 @@ document.getElementById('popApply').onclick = ()=>{
 document.addEventListener('click', e=>{
   if(!pop.hidden && !e.target.closest('.picker')) pop.hidden = true;
 });
+
+/* ── Новый лид: звук и уведомление ────────────────────────────
+   Сервер держит время последнего лида в памяти, поэтому опрашивать
+   его можно часто. Вебхук амо обновляет данные за пару секунд,
+   так что менеджер узнаёт о заявке почти сразу. */
+const BELL_ON = '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3a5 5 0 0 0-5 5c0 4-1.5 5-1.5 5h13S15 12 15 8a5 5 0 0 0-5-5ZM8.6 16a1.6 1.6 0 0 0 2.8 0"/></svg>';
+const BELL_OFF = '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3a5 5 0 0 0-5 5c0 4-1.5 5-1.5 5h13S15 12 15 8a5 5 0 0 0-5-5ZM8.6 16a1.6 1.6 0 0 0 2.8 0M3 3l14 14"/></svg>';
+
+let audio = null, soundOn = true, lastLead = null;
+
+function chime(){
+  if(!soundOn) return;
+  try{
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if(audio.state === 'suspended') audio.resume();
+    // две короткие ноты — заметно, но не раздражает
+    [[880, 0], [1320, .13]].forEach(([hz, delay]) => {
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = 'sine'; o.frequency.value = hz;
+      o.connect(g); g.connect(audio.destination);
+      const t = audio.currentTime + delay;
+      g.gain.setValueAtTime(.0001, t);
+      g.gain.exponentialRampToValueAtTime(.35, t + .02);
+      g.gain.exponentialRampToValueAtTime(.0001, t + .30);
+      o.start(t); o.stop(t + .32);
+    });
+  }catch(e){ console.warn('Звук недоступен:', e.message); }
+}
+
+function toast(title, text){
+  const box = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<b>${title}</b><span>${text}</span>`;
+  box.appendChild(el);
+  setTimeout(() => el.remove(), 12000);
+  el.onclick = () => el.remove();
+}
+
+async function pulse(){
+  try{
+    const r = await fetch('/api/pulse');
+    if(!r.ok) return;
+    const d = await r.json();
+    if(!d.at) return;
+    if(lastLead === null){ lastLead = d.at; return; }   // первый заход — просто запоминаем
+    if(d.at > lastLead){
+      lastLead = d.at;
+      const who = (MANAGERS.find(m => m.id === d.m) || {}).name;
+      const time = new Date(d.at).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+      chime();
+      toast('Новый лид', `${time}${who ? ' · ' + who : ''} — заявка ждёт звонка`);
+      if(state.tab === 'board') loadDay();            // подтягиваем доску сразу
+    }
+  }catch(e){ /* сеть моргнула — попробуем через пять секунд */ }
+}
+setInterval(pulse, 5000);
+pulse();
+
+const bell = document.getElementById('bell');
+function setBell(on){
+  soundOn = on;
+  bell.innerHTML = on ? BELL_ON : BELL_OFF;
+  bell.classList.toggle('off', !on);
+  bell.title = on ? 'Звук при новом лиде включён' : 'Звук выключен';
+}
+setBell(true);
+bell.onclick = () => {
+  setBell(!soundOn);
+  if(soundOn) chime();          // заодно разблокируем звук: браузер требует клика
+};
 
 /* ── Комната отдыха ───────────────────────────────────────────
    Открывается тремя быстрыми кликами по логотипу. Нигде не подписана. */
