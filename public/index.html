@@ -1349,8 +1349,6 @@ document.getElementById('popApply').onclick = ()=>{
 
 // Клик мимо окошка закрывает его
 document.addEventListener('click', e=>{
-  const ex = e.target.closest('.expand');
-  if(ex){ openCard(Number(ex.dataset.open)); return; }
   if(!pop.hidden && !e.target.closest('.picker')) pop.hidden = true;
 });
 
