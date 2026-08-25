@@ -70,10 +70,6 @@ module.exports = {
                  разбор эффективности ему не показывается */
   USERS: [
     { login: 'admin',   name: 'Администратор', role: 'admin',   passwordEnv: 'ADMIN_PASSWORD' },
-    { login: 'baha',    name: 'Баха',    role: 'admin',   passwordEnv: 'BAHA_PASSWORD' },
-    { login: 'baga',    name: 'Бага',    role: 'admin',   passwordEnv: 'BAGA_PASSWORD' },
-    { login: 'asqar',   name: 'Асқар',   role: 'admin',   passwordEnv: 'ASQAR_PASSWORD' },
-    { login: 'dias',    name: 'Диас',    role: 'admin',   passwordEnv: 'DIAS_PASSWORD' },
     { login: 'tair',    name: 'Таир',    role: 'manager', managerId: 'tair',    passwordEnv: 'TAIR_PASSWORD' },
     { login: 'dulat',   name: 'Дулат',   role: 'manager', managerId: 'dulat',   passwordEnv: 'DULAT_PASSWORD' },
     { login: 'sanzhar', name: 'Санжар',  role: 'manager', managerId: 'sanzhar', passwordEnv: 'SANZHAR_PASSWORD' },
@@ -95,6 +91,22 @@ module.exports = {
 
   // Этап «Закрыто и не реализовано» — ЗНР
   LOST_STATUS_ID: 143,
+
+  /* ─── Итог диагностики ───────────────────────────────────────
+     Поле в амо, которое менеджер обязан заполнить при переводе в ЗНР.
+     Если оно заполнено, доска верит ЕМУ, а не этапу воронки: раньше
+     сделка, улетевшая из «Записан» сразу в ЗНР, получала галочку,
+     хотя человек на диагностике не был.
+
+     ID поля возьмите на странице /setup и впишите сюда. */
+  OUTCOME_FIELD_ID: 0,
+
+  // Что означает каждый ответ. Сравнение без учёта регистра и пробелов.
+  OUTCOME_MAP: {
+    'был на дк':            'came',   // зелёная галочка
+    'не был на дк':         'no',     // красный крестик
+    'не записывался на дк': 'no',
+  },
 
   // Колонка мастер-классов слева. В амо пока нет привязки к МК.
   MK_ENABLED: false,
