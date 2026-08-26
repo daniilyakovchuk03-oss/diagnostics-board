@@ -1137,7 +1137,7 @@ function renderFunnel(){
       <td>${pct(m.came, m.assigned)}%</td>
       <td>${m.won}</td>
       ${w ? `<td>${byCalls(m.id) === null ? SK : byCalls(m.id)}</td>
-             <td>${(w.byManager[m.id]||{}).touched ?? 0}</td>
+             <td>${(w.byManager[m.id]||{}).assigned ?? 0}</td>
              <td>${(w.byManager[m.id]||{}).meetings ?? 0}</td>
              <td>${(w.byManager[m.id]||{}).lost ?? 0} <span style="color:var(--muted)">${
                pct((w.byManager[m.id]||{}).lost, (w.byManager[m.id]||{}).touched)}%</span></td>` : ''}
@@ -1176,13 +1176,9 @@ function renderFunnel(){
     ${w ? `
     <h3 class="fsub">Сделано за период</h3>
     <div class="fsteps">
-      <div class="fstep">
-        <span>Коснулись клиентов</span><b>${clients === null ? SK : clients}</b>
-        <em>уникальных номеров в обзвоне</em>
-      </div>
       <div class="fstep a">
-        <span>Двигали сделок</span><b>${w.total.touched}</b>
-        <em>включая пришедшие раньше</em>
+        <span>Назначили диагностик</span><b>${w.total.assigned}</b>
+        <em>записали за эти дни</em>
       </div>
       <div class="fstep g">
         <span>Провели диагностик</span><b>${w.total.meetings}</b>
@@ -1190,11 +1186,15 @@ function renderFunnel(){
       </div>
       <div class="fstep blue">
         <span>Закрыли продаж</span><b>${w.total.won}</b>
-        <em>сделок в «успешно реализовано»</em>
+        <em>перевели в «успешно реализовано»</em>
       </div>
       <div class="fstep r">
         <span>Ушло в ЗНР</span><b>${w.total.lost}</b>
-        <em>${pct(w.total.lost, w.total.touched)}% от обработанных</em>
+        <em>${pct(w.total.lost, w.total.touched)}% от сделок в работе</em>
+      </div>
+      <div class="fstep">
+        <span>Коснулись клиентов</span><b>${clients === null ? SK : clients}</b>
+        <em>уникальных номеров в обзвоне</em>
       </div>
     </div>` : ''}
 
@@ -1202,7 +1202,7 @@ function renderFunnel(){
       <table>
         <thead><tr>
           <th>Менеджер</th><th>Лидов</th><th>Назначено</th><th>Конверсия</th><th>Дошло</th><th>Доходимость</th><th>Купили</th>
-          ${w ? '<th>Коснулись</th><th>Двигали</th><th>Провели</th><th>ЗНР</th>' : ''}
+          ${w ? '<th>Коснулись</th><th>Назначили</th><th>Провели</th><th>ЗНР</th>' : ''}
         </tr></thead>
         <tbody>${rows}${other}</tbody>
       </table>
