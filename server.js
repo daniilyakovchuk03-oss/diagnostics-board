@@ -393,7 +393,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-26.8';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-26.9';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -810,6 +810,50 @@ function finishResponse(out) {
   return res;
 }
 
+/* ── Переходы по этапам за период ───────────────────────────────
+   Журнал амо отвечает на вопрос «что произошло за эти дни»:
+   сколько сделок записали на диагностику, сколько продали, сколько
+   закрыли. Раньше мы считали «лежит в успехе и сегодня тронули» —
+   и в счёт попадали продажи прошлых недель. */
+const eventsCache = new Map();
+
+async function statusEvents(from, to) {
+  const key = from + '..' + to;
+  const today = new Date().toISOString().slice(0, 10);
+  const ttl = to < today ? 6 * 3600 * 1000 : 3 * 60 * 1000;
+
+  const hit = eventsCache.get(key);
+  if (hit && Date.now() - hit.at < ttl) return hit.list;
+
+  const off = CONFIG.TZ_OFFSET || '+00:00';
+  const start = Math.floor(Date.parse(from + 'T00:00:00' + off) / 1000);
+  const end   = Math.floor(Date.parse(to   + 'T23:59:59' + off) / 1000);
+
+  const list = [];
+  try {
+    for (let page = 1; page <= 12; page++) {
+      const q = new URLSearchParams({ limit: '250', page: String(page) });
+      q.set('filter[type]', 'lead_status_changed');
+      q.set('filter[created_at][from]', String(start));
+      q.set('filter[created_at][to]', String(end));
+      const data = await amo('/api/v4/events?' + q);
+      const batch = (data && data._embedded && data._embedded.events) || [];
+      for (const e of batch) {
+        list.push({
+          leadId: Number(e.entity_id),
+          at: Number(e.created_at) * 1000,
+          to: statusOfEvent(e.value_after),
+        });
+      }
+      if (batch.length < 250) break;
+    }
+  } catch (e) {
+    console.error('Журнал этапов:', e.message);
+  }
+  eventsCache.set(key, { at: Date.now(), list });
+  return list;
+}
+
 /* ── История этапов сделки ──────────────────────────────────────
    Амо хранит журнал событий: когда и с какого этапа на какой
    переводили сделку. Тянем по одной карточке и только когда её
@@ -1057,16 +1101,31 @@ const server = http.createServer(async (req, res) => {
     /* Работа за период — в отличие от воронки считается не по дате
        появления лида, а по факту действий: какие сделки двигали,
        какие встречи провели. Так видно работу со старой базой. */
-    const touched = (cache.leads || []).filter(l => !from || (l.updated >= from && l.updated <= to));
-    const held = (cache.items || []).filter(x =>
-      (!from || (x.date >= from && x.date <= to)) && x.st === 'came');
-
-    const work = who => ({
-      touched: touched.filter(l => !who || l.m === who).length,
-      meetings: held.filter(x => !who || x.m === who).length,
-      won:  touched.filter(l => l.won  && (!who || l.m === who)).length,
-      lost: touched.filter(l => l.lost && (!who || l.m === who)).length,
+    /* Считаем по журналу: что реально произошло за период.
+       Источник учитываем тем же фильтром, что и в воронке выше. */
+    const byId = new Map((cache.leads || []).map(l => [l.id, l]));
+    const events = (await statusEvents(from || to, to)).filter(e => {
+      const l = byId.get(e.leadId);
+      return l && (!src || l.src === src);          // чужая воронка и другой источник — мимо
     });
+
+    const held = (cache.items || []).filter(x =>
+      (!from || (x.date >= from && x.date <= to)) && x.st === 'came' &&
+      (!src || (byId.get(x.id) || {}).src === src));
+
+    const forWho = (arr, who) => who ? arr.filter(e => (byId.get(e.leadId) || {}).m === who) : arr;
+    const countTo = (arr, status) => arr.filter(e => Number(e.to) === Number(status)).length;
+
+    const work = who => {
+      const ev = forWho(events, who);
+      return {
+        assigned: countTo(ev, CONFIG.ANCHOR_STATUS_ID),   // записали на диагностику
+        meetings: held.filter(x => !who || x.m === who).length,
+        won:  countTo(ev, CONFIG.WON_STATUS_ID),
+        lost: countTo(ev, CONFIG.LOST_STATUS_ID),
+        touched: new Set(ev.map(e => e.leadId)).size,     // сколько сделок двигали
+      };
+    };
 
     return json(200, {
       updatedAt: cache.updatedAt,
