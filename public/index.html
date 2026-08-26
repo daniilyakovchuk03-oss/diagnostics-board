@@ -507,6 +507,10 @@ html[data-theme="dark"] .uhead__ava{color:#0D1117}
       <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="2.5" y="3.5" width="15" height="13" rx="1.5"/><path d="M2.5 8h15M7.5 8v8.5M12.5 8v8.5"/></svg>
       <span>Эффективность</span>
     </button>
+    <button data-tab="accounts" aria-pressed="false" hidden>
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="15" height="11" rx="2"/><path d="M6 9h3M6 12h5"/><circle cx="14" cy="10.5" r="1.6"/></svg>
+      <span>Доступы</span>
+    </button>
     <button data-tab="calls" aria-pressed="false">
       <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 3.2 8 6.1 6.3 7.9a9 9 0 0 0 5.8 5.8l1.8-1.7 2.9 1.6v3a1.4 1.4 0 0 1-1.5 1.4A14.2 14.2 0 0 1 2.9 4.7 1.4 1.4 0 0 1 4.3 3.2Z"/></svg>
       <span>Звонки</span>
@@ -595,6 +599,11 @@ html[data-theme="dark"] .uhead__ava{color:#0D1117}
   <div class="funnel" id="userBox"></div>
 </section>
 
+<section id="accountsView" hidden>
+  <iframe id="accountsFrame" title="Доступы"
+          style="display:block;width:100%;height:calc(100vh - 57px);border:0"></iframe>
+</section>
+
 <section id="sheetView" hidden>
   <iframe id="sheetFrame" title="Таблица эффективности"
           style="display:block;width:100%;height:calc(100vh - 57px);border:0"></iframe>
@@ -667,9 +676,11 @@ function applyRole(){
   document.getElementById('accName').textContent = me.name;
   document.getElementById('accRole').textContent = me.role === 'admin' ? 'Полный доступ' : 'Свои показатели';
   document.getElementById('accAva').textContent = (me.name || '?').trim()[0].toUpperCase();
-  // менеджеру список пользователей не нужен — он там один
-  const usersTab = document.querySelector('.side__nav button[data-tab="users"]');
-  if(usersTab) usersTab.hidden = me.role !== 'admin';
+  // менеджеру список пользователей и доступы ни к чему
+  for(const tab of ['users', 'accounts']){
+    const b = document.querySelector(`.side__nav button[data-tab="${tab}"]`);
+    if(b) b.hidden = me.role !== 'admin';
+  }
 }
 
 document.getElementById('logout').onclick = async () => {
@@ -1276,9 +1287,14 @@ function setTab(t){
   document.getElementById('funnelView').hidden = t !== 'funnel';
   document.getElementById('usersView').hidden  = t !== 'users';
   document.getElementById('sheetView').hidden  = t !== 'sheet';
+  document.getElementById('accountsView').hidden = t !== 'accounts';
+  if(t === 'accounts'){
+    const a = document.getElementById('accountsFrame');
+    a.src = '/accounts.html';        // всегда свежий список
+  }
   /* На «Эффективности» свой выбор месяца внутри страницы — верхний выбор дня
      там ни на что не влияет и только путает, поэтому прячем его. */
-  document.querySelector('.nav').hidden = t === 'sheet';
+  document.querySelector('.nav').hidden = (t === 'sheet' || t === 'accounts');
   if(t === 'sheet'){                       // грузим таблицу только при первом открытии
     const f = document.getElementById('sheetFrame');
     if(!f.src) f.src = '/table.html';
