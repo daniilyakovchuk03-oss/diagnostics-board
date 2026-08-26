@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Доступы — NeAdPulse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+
+:root{
+  --paper:#E9EDEB;
+  --panel:#FFFFFF;
+  --frame:#333B38;
+  --frame-lit:#4C5652;
+  --ink:#12171A;
+  --muted:#6B7670;
+  --rule:#CBD4D0;
+  --rule-soft:#E2E8E5;
+
+  --green:#0F7A45;
+  --red:#C3271E;
+  --blue:#1F4FD0;
+  --amber:#B05806;
+  --lime:#7B9E2E;
+
+  --card-bg:#FFFFFF;
+  --card-came:#F4FAF6;
+  --card-no:#FCF5F4;
+  --card-moved:#FDF8F2;
+  --hover:#F3F6F4;
+  --gtime-bg:#FAFBFA;
+  --input-bg:#FFFFFF;
+  --ring:rgba(31,79,208,.14);
+  --no-opacity:.86;
+
+  --r:10px;
+  --shadow:0 1px 0 rgba(18,23,26,.04), 0 2px 8px rgba(18,23,26,.06);
+  color-scheme:light;
+}
+html[data-theme="dark"]{
+  /* Палитра в духе GitHub Dark: глубокий сине-графитовый фон */
+  --paper:#0D1117;
+  --panel:#161B22;
+  --frame:#010409;
+  --frame-lit:#161B22;
+  --ink:#E6EDF3;
+  --muted:#8B949E;
+  --rule:#30363D;
+  --rule-soft:#21262D;
+
+  --green:#3FB950;
+  --red:#F85149;
+  --blue:#388BFD;
+  --amber:#D29922;
+  --lime:#7EE787;
+
+  --card-bg:#161B22;
+  --card-came:#0F2418;
+  --card-no:#2A1517;
+  --card-moved:#2A2113;
+  --hover:#21262D;
+  --gtime-bg:#0D1117;
+  --input-bg:#0D1117;
+  --ring:rgba(56,139,253,.35);
+  --no-opacity:.72;
+
+  --shadow:0 1px 0 rgba(1,4,9,.4), 0 3px 12px rgba(1,4,9,.5);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:"Golos Text",system-ui,sans-serif;
+  font-size:15px;padding:22px;-webkit-font-smoothing:antialiased}
+button,input{font:inherit;color:inherit}
+[hidden]{display:none !important}
+h2{font-family:"Oswald",sans-serif;font-weight:500;font-size:13px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+
+.wrap{max-width:880px}
+.card3{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);
+  box-shadow:var(--shadow);overflow:hidden}
+table{border-collapse:collapse;width:100%}
+th,td{padding:12px 14px;border-bottom:1px solid var(--rule-soft);text-align:left;font-size:14px;vertical-align:middle}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+  font-weight:600;border-bottom:2px solid var(--ink)}
+tr:last-child td{border-bottom:0}
+.login{font-family:"IBM Plex Mono",monospace;font-weight:600}
+.tag2{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;font-weight:600;
+  border:1px solid currentColor}
+.tag2.admin{color:var(--blue)} .tag2.manager{color:var(--muted)}
+.src{font-size:12px;color:var(--muted)}
+.btn{background:transparent;border:1px solid var(--rule);border-radius:8px;padding:7px 12px;
+  cursor:pointer;font-size:13px;white-space:nowrap;transition:.15s ease}
+.btn:hover{border-color:var(--blue);color:var(--blue)}
+
+.pass{margin-top:16px;background:var(--panel);border:1px solid var(--green);border-radius:var(--r);
+  padding:16px 18px;box-shadow:var(--shadow)}
+.pass b{display:block;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;margin-bottom:8px}
+.pass .val{font-family:"IBM Plex Mono",monospace;font-size:22px;font-weight:600;
+  user-select:all;word-break:break-all}
+.pass .hint{font-size:12.5px;color:var(--muted);margin-top:8px;line-height:1.5}
+.note{margin-top:16px;background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);
+  padding:14px 16px;font-size:13px;color:var(--muted);line-height:1.6}
+.note b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2>Доступы к доске</h2>
+  <div class="card3"><table>
+    <thead><tr><th>Логин</th><th>Кто</th><th>Права</th><th>Пароль</th><th></th></tr></thead>
+    <tbody id="rows"><tr><td colspan="5">Загружаем…</td></tr></tbody>
+  </table></div>
+
+  <div class="pass" id="pass" hidden>
+    <b>Новый пароль для <span id="passLogin"></span></b>
+    <div class="val" id="passVal"></div>
+    <div class="hint">Скопируйте и передайте сотруднику. Больше он нигде не показывается —
+      на сервере хранится только зашифрованный отпечаток. Старый пароль перестал действовать.</div>
+  </div>
+
+  <div class="note">
+    Имена подтягиваются из amoCRM: переименуете сотрудника там — изменится и здесь.
+    Логин при этом остаётся прежним, он привязан к месту в отделе, а не к человеку.
+    <b>Пришёл новый сотрудник на то же место — выдайте новый пароль</b>, и доступ предыдущего
+    перестанет работать.
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+async function load(){
+  try{
+    const r = await fetch('/api/users');
+    if(!r.ok) throw new Error('Сервер ответил ' + r.status);
+    const d = await r.json();
+    $('rows').innerHTML = d.users.map(u => `
+      <tr>
+        <td class="login">${u.login}</td>
+        <td>${u.name}</td>
+        <td><span class="tag2 ${u.role}">${u.role === 'admin' ? 'полный доступ' : 'менеджер'}</span></td>
+        <td class="src">${u.passwordSource}${u.changedAt ? ' · ' + new Date(u.changedAt)
+            .toLocaleDateString('ru-RU', {day:'numeric', month:'short'}) : ''}</td>
+        <td><button class="btn" data-login="${u.login}">Новый пароль</button></td>
+      </tr>`).join('');
+  }catch(e){
+    $('rows').innerHTML = `<tr><td colspan="5">Не удалось получить список: ${e.message}</td></tr>`;
+  }
+}
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('button[data-login]');
+  if(!b) return;
+  const login = b.dataset.login;
+  if(!confirm(`Выдать новый пароль для «${login}»? Старый перестанет работать.`)) return;
+
+  b.disabled = true; b.textContent = 'Создаём…';
+  try{
+    const r = await fetch('/api/users/password', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ login }),
+    });
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || r.status);
+    $('passLogin').textContent = d.login;
+    $('passVal').textContent = d.password;
+    $('pass').hidden = false;
+    $('pass').scrollIntoView({ behavior:'smooth', block:'center' });
+    load();
+  }catch(e){
+    alert('Не получилось: ' + e.message);
+  }
+  b.disabled = false; b.textContent = 'Новый пароль';
+});
+
+if (matchMedia('(prefers-color-scheme: light)').matches)
+  document.documentElement.dataset.theme = 'light';
+load();
+</script>
+</body>
+</html>
