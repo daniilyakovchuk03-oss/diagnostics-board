@@ -102,6 +102,133 @@ async function notifyNewLeads() {
   console.log(`Телеграм: отправлено уведомлений — ${Math.min(fresh.length, 9)}`);
 }
 
+/* ── Сводки в Телеграм ──────────────────────────────────────────
+   Утром — что предстоит, вечером — что вышло. Отметку об отправке
+   держим в хранилище: перезапуск сервиса не должен слать дубли. */
+
+const localNow = () => {
+  const s = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: CONFIG.TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date());
+  return { date: s.slice(0, 10), time: s.slice(11, 16) };
+};
+
+const humanDate = d => new Date(d + 'T12:00:00Z')
+  .toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+
+const plural = (n, one, few, many) => {
+  const a = Math.abs(n) % 100, b = a % 10;
+  return n + ' ' + (a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many);
+};
+
+/* Утро: сколько диагностик впереди и кто вчера остался без звонка */
+async function digestMorning() {
+  if (!tgReady()) return;
+  const { date } = localNow();
+  const today = (cache.items || []).filter(x => x.date === date);
+
+  const lines = [`🌅 <b>Доброе утро.</b> ${humanDate(date)}`, ''];
+
+  if (!today.length) {
+    lines.push('На сегодня диагностик пока не назначено.');
+  } else {
+    const first = today.map(x => x.t).sort()[0];
+    lines.push(`Диагностик сегодня: <b>${today.length}</b>, первая в ${first}`, '');
+    for (const m of CONFIG.MANAGERS) {
+      const mine = today.filter(x => x.m === m.id).sort((a, b) => a.t.localeCompare(b.t));
+      if (!mine.length) continue;
+      const times = mine.slice(0, 8).map(x => x.t).join(', ');
+      lines.push(`<b>${esc(m.name)}</b> — ${mine.length}: ${times}${mine.length > 8 ? '…' : ''}`);
+    }
+    const other = today.filter(x => !CONFIG.MANAGERS.some(m => m.id === x.m));
+    if (other.length) lines.push(`Без ответственного из отдела — ${other.length}`);
+  }
+
+  // вчерашние лиды, до которых не дозвонились
+  const yest = new Date(Date.parse(date + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10);
+  try {
+    const resp = await responseTimes(yest, yest);
+    const noCall = Object.values(resp).reduce((a, r) => a + (r.noCall || 0), 0);
+    const leads = (cache.leads || []).filter(l => l.created === yest).length;
+    if (leads) {
+      lines.push('', `Вчера пришло ${plural(leads, 'лид', 'лида', 'лидов')}` +
+        (noCall ? `, без звонка остались <b>${noCall}</b>` : ', все обзвонены'));
+    }
+  } catch (e) { /* без этой строки сводка тоже полезна */ }
+
+  await tgSend(lines.join('\n'), { text: 'Открыть доску', url: boardUrl() });
+}
+
+/* Вечер: что получилось за день и кто закрыл норму */
+async function digestEvening() {
+  if (!tgReady()) return;
+  const { date } = localNow();
+
+  const leads = (cache.leads || []).filter(l => l.created === date);
+  const assigned = leads.filter(l => l.assigned).length;
+  const items = (cache.items || []).filter(x => x.date === date);
+  const came = items.filter(x => x.st === 'came').length;
+  const no = items.filter(x => x.st === 'no').length;
+  const won = leads.filter(l => l.won).length;
+  const lost = (cache.leads || []).filter(l => l.updated === date && l.lost).length;
+  const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+
+  const lines = [
+    `🌇 <b>Итоги дня.</b> ${humanDate(date)}`, '',
+    `Лиды: пришло <b>${leads.length}</b> · назначено <b>${assigned}</b> (${pct(assigned, leads.length)}%)`,
+    `Диагностики: провели <b>${came}</b> · не пришли <b>${no}</b> · доходимость ${pct(came, came + no)}%`,
+    `Продажи: <b>${won}</b> · ушло в ЗНР: ${lost}`,
+  ];
+
+  // норма по каждому: КЭВ и дозвоны
+  let calls = [];
+  try { calls = (await sipuni.stats(date, date)).managers || []; } catch (e) {}
+  const nk = (CONFIG.NORMS && CONFIG.NORMS.kev) || { plan: 0 };
+  const nc = (CONFIG.NORMS && CONFIG.NORMS.connects) || { plan: 0 };
+
+  if (nk.plan || nc.plan) {
+    lines.push('', `<b>Норма дня</b> — ${nk.plan} КЭВ и ${nc.plan} дозвонов:`);
+    for (const m of CONFIG.MANAGERS) {
+      const kev = items.filter(x => x.m === m.id && x.st === 'came').length;
+      const con = (calls.find(c => c.id === m.id) || {}).connected || 0;
+      const ok = kev >= nk.plan && con >= nc.plan;
+      lines.push(`${ok ? '✅' : '⚠️'} ${esc(m.name)} — ${kev} КЭВ, ${con} дозвонов`);
+    }
+  }
+
+  await tgSend(lines.join('\n'), { text: 'Открыть доску', url: boardUrl() });
+}
+
+const boardUrl = () => process.env.BOARD_URL || 'https://diagnostics-board-production.up.railway.app';
+
+/* Раз в минуту смотрим, не пора ли отправить сводку */
+async function checkDigests() {
+  if (!tgReady()) return;
+  const { date, time } = localNow();
+  for (const [kind, at, fn] of [
+    ['morning', CONFIG.DIGEST_MORNING, digestMorning],
+    ['evening', CONFIG.DIGEST_EVENING, digestEvening],
+  ]) {
+    if (time !== at) continue;
+    const key = `tg:digest:${date}:${kind}`;
+    if (store[key]) continue;                 // уже отправляли сегодня
+    store[key] = '1'; saveStore();
+    await fn();
+    console.log(`Сводка «${kind}» отправлена`);
+  }
+}
+
+/* Первый запуск после обновления: шлём утреннюю сводку сразу,
+   чтобы было видно, что всё работает, и что сегодня по плану. */
+async function digestOnce() {
+  if (!tgReady() || store['tg:digest:first']) return;
+  store['tg:digest:first'] = new Date().toISOString();
+  saveStore();
+  await digestMorning();
+  console.log('Первая сводка отправлена');
+}
+
 /* ── Вход и права ───────────────────────────────────────────────
    Пароли берём из переменных окружения. Сессия — подписанная кука:
    подделать её без секрета нельзя, база для этого не нужна. */
@@ -195,7 +322,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-25.11';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-25.12';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -912,6 +1039,14 @@ const server = http.createServer(async (req, res) => {
       .values()];
     return json(200, { chats, подсказка: 'Напишите что-нибудь в группу и обновите страницу' });
   }
+  /* Отправить сводку вручную: удобно проверить вид, не дожидаясь времени */
+  if (url.pathname === '/tg/digest') {
+    if (!isAdmin(user)) return send(403, 'text/plain; charset=utf-8', 'Только для руководителя');
+    const kind = url.searchParams.get('kind') === 'evening' ? 'evening' : 'morning';
+    await (kind === 'evening' ? digestEvening() : digestMorning());
+    return json(200, { ok: true, kind });
+  }
+
   if (url.pathname === '/tg/test') {
     if (!isAdmin(user)) return send(403, 'text/plain; charset=utf-8', 'Только для руководителя');
     return json(200, await tgSend('✅ Проверка связи. Бот на месте, уведомления о лидах будут приходить сюда.'));
@@ -955,5 +1090,7 @@ server.listen(PORT, async () => {
   await loadStages();
   refresh();
   setTimeout(warmCalls, 3000);
+  setTimeout(digestOnce, 8000);            // первая сводка — после первой загрузки данных
+  setInterval(checkDigests, 60000);
   setInterval(refresh, Math.max(20, CONFIG.REFRESH_SEC) * 1000);
 });
