@@ -125,6 +125,7 @@ const plural = (n, one, few, many) => {
 /* Утро: сколько диагностик впереди и кто вчера остался без звонка */
 async function digestMorning() {
   if (!tgReady()) return;
+  if (!cache.updatedAt) { console.log('Сводка отложена: данные ещё не загрузились'); return; }
   const { date } = localNow();
   const today = (cache.items || []).filter(x => x.date === date);
 
@@ -163,6 +164,7 @@ async function digestMorning() {
 /* Вечер: что получилось за день и кто закрыл норму */
 async function digestEvening() {
   if (!tgReady()) return;
+  if (!cache.updatedAt) { console.log('Сводка отложена: данные ещё не загрузились'); return; }
   const { date } = localNow();
 
   const leads = (cache.leads || []).filter(l => l.created === date);
@@ -222,8 +224,10 @@ async function checkDigests() {
 /* Первый запуск после обновления: шлём утреннюю сводку сразу,
    чтобы было видно, что всё работает, и что сегодня по плану. */
 async function digestOnce() {
-  if (!tgReady() || store['tg:digest:first']) return;
-  store['tg:digest:first'] = new Date().toISOString();
+  if (!tgReady() || store['tg:digest:hello']) return;
+  // без данных сводка получится пустой и бессмысленной — ждём первой загрузки
+  if (!cache.updatedAt) return;
+  store['tg:digest:hello'] = new Date().toISOString();
   saveStore();
   await digestMorning();
   console.log('Первая сводка отправлена');
@@ -322,7 +326,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-25.12';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-26.1';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -600,6 +604,7 @@ async function refresh() {
     };
     console.log(`Обновлено: сделок ${leads.length}, встреч на доске ${cache.items.length}`);
     notifyNewLeads();
+    digestOnce();                 // первая сводка — когда данные уже на руках
   } catch (e) {
     cache.error = e.message;
     console.error('Ошибка обновления:', e.message);
@@ -1090,7 +1095,6 @@ server.listen(PORT, async () => {
   await loadStages();
   refresh();
   setTimeout(warmCalls, 3000);
-  setTimeout(digestOnce, 8000);            // первая сводка — после первой загрузки данных
   setInterval(checkDigests, 60000);
   setInterval(refresh, Math.max(20, CONFIG.REFRESH_SEC) * 1000);
 });
