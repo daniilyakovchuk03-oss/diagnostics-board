@@ -242,7 +242,7 @@ const SK = '<span class="skel">—</span>';
 const today = new Date();
 const state = {
   ym: `${today.getFullYear()}-${pad(today.getMonth() + 1)}`,
-  managers: [], allManagers: [], funnel: null, calls: null, me: null,
+  managers: [], allManagers: [], eff: null, me: null,
   sales: {},           // { идентификатор менеджера: [по дням] }
   open: null,          // у кого раскрыт разбор
 };
@@ -273,11 +273,11 @@ async function getJSON(url, ms = 90000) {
   } finally { clearTimeout(timer); }
 }
 
-const salesKey = () => 'neadpulse:sales:' + state.ym;
+
 
 async function loadAll() {
   const [from, to] = monthRange();
-  state.funnel = null; state.calls = null;
+  state.eff = null;
   render();
 
   try {
@@ -287,58 +287,65 @@ async function loadAll() {
     state.me = cfg.me || null;
   } catch (e) { console.error('Настройки:', e.message); }
 
-  // продажи из общего хранилища
+  // продажи
   try {
-    const r = await getJSON('/api/store?key=' + encodeURIComponent(salesKey()));
-    state.sales = r && r.value ? JSON.parse(r.value) : {};
+    const r = await getJSON('/api/sales?month=' + state.ym);
+    state.sales = r.sales || {};
   } catch (e) { state.sales = {}; }
   render();
 
-  // цифры из амо и Сипуни — параллельно
-  const [f, c] = await Promise.allSettled([
-    getJSON(`/api/funnel?from=${from}&to=${to}`),
-    getJSON(`/api/calls?from=${from}&to=${to}`),
-  ]);
-  state.funnel = f.status === 'fulfilled' ? f.value : { error: f.reason.message };
-  state.calls  = c.status === 'fulfilled' ? c.value : { error: c.reason.message, managers: [] };
+  // показатели всего отдела: видны всем, включая менеджеров
+  try {
+    state.eff = await getJSON(`/api/efficiency?from=${from}&to=${to}`);
+  } catch (e) {
+    state.eff = { error: e.message, managers: [] };
+  }
   render();
 }
 
-let saveTimer = null;
-function saveSales() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
-    try {
-      await fetch('/api/store', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: salesKey(), value: JSON.stringify(state.sales) }),
-      });
-      const s = document.getElementById('saved');
-      s.classList.add('on');
-      setTimeout(() => s.classList.remove('on'), 1500);
-    } catch (e) { console.error('Сохранение:', e.message); }
-  }, 600);
+/* Каждая правка уходит отдельной ячейкой: сервер вписывает её в свою
+   копию таблицы, поэтому чужие числа не могут быть затёрты. */
+async function saveCell(manager, day, value) {
+  try {
+    const r = await fetch('/api/sales', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month: state.ym, manager, day, value }),
+    });
+    if (!r.ok) throw new Error('Сервер ответил ' + r.status);
+    const d = await r.json();
+    state.sales = d.sales || state.sales;      // держим у себя то же, что на сервере
+    const s = document.getElementById('saved');
+    s.classList.add('on');
+    setTimeout(() => s.classList.remove('on'), 1500);
+  } catch (e) {
+    alert('Не удалось сохранить: ' + e.message + '\nЧисло осталось только на экране, обновите страницу.');
+  }
 }
 
 const isAdmin = () => !state.me || state.me.role === 'admin';
 
 /* ── Показатели одного менеджера ──────────────────────────────── */
 function metricsOf(id) {
-  const f = (state.funnel && state.funnel.byManager || []).find(m => m.id === id);
-  const c = (state.calls  && state.calls.managers  || []).find(m => m.id === id);
-  if (!f && !c) return null;
+  const f = (state.eff && state.eff.managers || []).find(m => m.id === id);
+  const c = f;                       // теперь всё приходит одним куском
+  if (!f) return null;
 
-  const speedMin = c && c.medResp !== null && c.medResp !== undefined ? Math.round(c.medResp / 60) : null;
-  const perDay = c ? Math.round(c.attempts / Math.max(1, elapsedDays())) : null;
+  const hasCalls = state.eff && state.eff.hasCalls;
+  const speedMin = (hasCalls && c.medResp != null) ? Math.round(c.medResp / 60) : null;
+  const perDay = hasCalls ? Math.round(c.attempts / Math.max(1, elapsedDays())) : null;
+
+  /* Если лидов за период нет вовсе, конверсию и доходимость считать не из чего.
+     Показывать «0%» нельзя: выглядит как результат работы, хотя это пустые данные. */
+  const hasLeads = f && f.leads > 0;
 
   return {
     leads: f ? f.leads : 0, assigned: f ? f.assigned : 0, came: f ? f.came : 0,
     won: f ? f.won : 0, noCall: c ? c.noCall : 0,
     attempts: c ? c.attempts : 0, connected: c ? c.connected : 0,
     talkSec: c ? c.talkSec : 0,
-    toMeet:   f ? pct(f.assigned, f.leads) : null,
-    reach:    f ? pct(f.came, f.assigned) : null,
-    connect:  c ? c.rate : null,
+    toMeet:   hasLeads ? pct(f.assigned, f.leads) : null,
+    reach:    (f && f.assigned > 0) ? pct(f.came, f.assigned) : null,
+    connect:  hasCalls ? c.rate : null,
     speed:    speedMin,
     activity: perDay,
   };
@@ -432,20 +439,25 @@ function render() {
 function renderCards() {
   const box = document.getElementById('cards');
   const warn = document.getElementById('partial');
-  const noCalls = state.calls && (state.calls.error || !(state.calls.managers || []).length);
+  const noCalls = state.eff && !state.eff.hasCalls;
+  const noLeads = state.eff && !(state.eff.managers || []).some(m => m.leads > 0);
   if (warn) {
-    warn.hidden = !(state.calls && (state.calls.partial || noCalls));
-    warn.innerHTML = noCalls
+    warn.hidden = !(state.eff && (state.eff.partial || noCalls)) && !noLeads;
+    warn.innerHTML = noLeads
+      ? '<b>Лиды за этот месяц не пришли.</b> Конверсия и доходимость в оценку не вошли — ' +
+        'проверьте, что сервер видит amoCRM: откройте <code>/health</code> и посмотрите поле leads.'
+      : noCalls
       ? '<b>Звонки не загрузились.</b> Дозвон, активность и скорость реакции в оценку не вошли — ' +
         'эффективность посчитана только по лидам. Обновите страницу через минуту.'
       : '<b>Данные за месяц неполные.</b> Сипуни отдала не всю выгрузку звонков, поэтому дозвон, ' +
         'активность и скорость реакции занижены. Обновите страницу через минуту.';
   }
-  if (!state.managers.length) { box.innerHTML = ''; return; }
+  if (!state.allManagers.length && !(state.eff && state.eff.managers)) { box.innerHTML = ''; return; }
 
-  const loading = !state.funnel || !state.calls;
+  const loading = !state.eff;
 
-  box.innerHTML = state.managers.map(man => {
+  const team = (state.eff && state.eff.managers) || state.allManagers;
+  box.innerHTML = team.map(man => {
     const m = loading ? null : metricsOf(man.id);
     const sc = m ? scoreOf(m) : null;
     const opened = state.open === man.id;
@@ -555,8 +567,10 @@ document.addEventListener('input', e => {
   if (!i || !isAdmin()) return;               // менеджер продажи не правит
   const id = i.dataset.man, day = Number(i.dataset.day);
   if (!state.sales[id]) state.sales[id] = [];
-  state.sales[id][day - 1] = i.value === '' ? '' : Number(i.value);
-  saveSales();
+  const value = i.value === '' ? '' : Number(i.value);
+  state.sales[id][day - 1] = value;
+  clearTimeout(i._t);
+  i._t = setTimeout(() => saveCell(id, day, value), 500);   // ждём, пока допечатают
   // пересчитываем только итоги, не трогая поле, в котором печатают
   const arr = state.sales[id];
   const row = i.closest('tr');
