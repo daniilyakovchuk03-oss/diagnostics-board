@@ -178,8 +178,10 @@ html[data-theme="dark"] .add{color:#0D1117}
 .col{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
 .col__head{padding:12px 14px 11px;border-bottom:2px solid var(--ink);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .col__name{font-family:"Oswald",sans-serif;font-weight:500;font-size:21px;letter-spacing:.06em;text-transform:uppercase;line-height:1}
-.col__count{padding:6px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--rule-soft);display:flex;gap:10px}
+.col__count{padding:7px 14px;font-size:11.5px;color:var(--muted);
+  border-bottom:1px solid var(--rule-soft);display:flex;flex-wrap:wrap;gap:4px 12px}
 .col__count b{font-weight:600;color:var(--ink)}
+.col__count b.g{color:var(--green)} .col__count b.r{color:var(--red)} .col__count b.a{color:var(--amber)}
 .col__list{padding:8px;display:flex;flex-direction:column;gap:6px;min-height:70px}
 
 .card{
@@ -866,9 +868,16 @@ function renderCols(){
       .sort((a,b)=> (a.date+a.t).localeCompare(b.date+b.t));
     const total = state.items.filter(x=>x.m===m.id);
     const came = total.filter(x=>eff(x)==='came').length;
+    const lost = total.filter(x=>x.lost).length;      // ушли в ЗНР
+    const paid = total.filter(x=>x.won).length;       // оплатили
     return `<section class="col">
       <div class="col__head"><span class="col__name">${m.name}</span></div>
-      <div class="col__count"><span>Встреч <b>${state.busy ? SK : total.length}</b></span><span>Дошли <b>${state.busy ? SK : came}</b></span></div>
+      <div class="col__count">
+        <span>Встреч <b>${state.busy ? SK : total.length}</b></span>
+        <span>Дошли <b class="g">${state.busy ? SK : came}</b></span>
+        <span>ЗНР <b class="r">${state.busy ? SK : lost}</b></span>
+        <span>Оплаты <b class="a">${state.busy ? SK : paid}</b></span>
+      </div>
       <div class="col__list">${mine.length ? mine.map(cardHTML).join('') : '<div class="empty">Записей нет</div>'}</div>
     </section>`;
   }).join('');
