@@ -84,7 +84,7 @@ async function notifyNewLeads() {
       { text: 'Открыть доску', url: `https://${DOMAIN.replace('.amocrm.ru', '')}` });
   } else {
     for (const l of fresh) {
-      const man = CONFIG.MANAGERS.find(m => m.id === l.m);
+      const man = teamList().find(m => m.id === l.m);
       const when = local(l.createdTs / 1000);
       await tgSend(
         `🔥 <b>Новый лид</b>\n` +
@@ -136,7 +136,7 @@ async function digestMorning() {
   } else {
     const first = today.map(x => x.t).sort()[0];
     lines.push(`Диагностик сегодня: <b>${today.length}</b>, первая в ${first}`, '');
-    for (const m of CONFIG.MANAGERS) {
+    for (const m of teamList()) {
       const mine = today.filter(x => x.m === m.id).sort((a, b) => a.t.localeCompare(b.t));
       if (!mine.length) continue;
       const times = mine.slice(0, 8).map(x => x.t).join(', ');
@@ -195,7 +195,7 @@ async function digestEvening() {
 
   if (nk.plan || nc.plan) {
     lines.push('', `<b>Норма дня</b> — ${nk.plan} КЭВ и ${nc.plan} дозвонов:`);
-    for (const m of CONFIG.MANAGERS) {
+    for (const m of teamList()) {
       const kev = items.filter(x => x.m === m.id && x.st === 'came').length;
       const con = (calls.find(c => c.id === m.id) || {}).connected || 0;
       const ok = kev >= nk.plan && con >= nc.plan;
@@ -252,9 +252,43 @@ function sameSecret(a, b) {
   return crypto.timingSafeEqual(x, y);
 }
 
+/* Пароли, выданные через интерфейс, храним рядом с продажами —
+   в виде свёртки, а не открытым текстом. Если для входа пароль там
+   есть, он важнее переменной окружения: так пароль можно поменять,
+   не трогая настройки Railway. */
+const authKey = login => 'auth:' + login;
+
+function setPassword(login, password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 32).toString('hex');
+  store[authKey(login)] = JSON.stringify({ salt, hash, at: new Date().toISOString() });
+  saveStore();
+}
+
+function storedPassword(login) {
+  try { return JSON.parse(store[authKey(login)] || 'null'); }
+  catch { return null; }
+}
+
+/* Пароль из букв и цифр без похожих символов: ноль и буква «о»,
+   единица и «l» в записке от руки неразличимы. */
+function makePassword(len = 12) {
+  const abc = 'abcdefghijkmnpqrstuvwxyzACDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for (const b of crypto.randomBytes(len)) out += abc[b % abc.length];
+  return out;
+}
+
 function checkLogin(login, password) {
   const u = (CONFIG.USERS || []).find(u => u.login === String(login || '').trim().toLowerCase());
   if (!u) return null;
+
+  const own = storedPassword(u.login);
+  if (own) {
+    const hash = crypto.scryptSync(String(password || ''), own.salt, 32).toString('hex');
+    return sameSecret(hash, own.hash) ? u : null;
+  }
+
   const expected = process.env[u.passwordEnv];
   if (!expected) {
     console.error(`Не задан пароль в переменной ${u.passwordEnv} — вход для «${u.login}» невозможен`);
@@ -351,7 +385,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-26.3';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-26.4';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -438,7 +472,33 @@ let stageOrder = {};   // { status_id: позиция }
 let stageInfo  = {};   // { status_id: { name, color } } — цвета берём те же, что в амо
 
 let userNames = {};     // { user_id: имя } — кто двигал сделку
+let usersLoadedAt = 0;  // когда последний раз обновляли имена
+
+/* Имя менеджера. Берём из амо, чтобы переименование сотрудника
+   подхватывалось само; в конфиге остаётся запасное значение. */
+const mname = m => (m.amo_user_id && userNames[m.amo_user_id]) || m.name;
+
+/* Список менеджеров с актуальными именами — им пользуемся везде,
+   где имя уходит наружу. */
+const teamList = () => CONFIG.MANAGERS.map(m => ({ ...m, name: mname(m) }));
 let outcomeField = null;   // поле «Итог диагностики» — находим сами, по названию
+
+/* Имена сотрудников: перечитываем не чаще раза в четверть часа —
+   этого хватает, чтобы переименование в амо доехало до доски. */
+async function loadUsers(force) {
+  if (!force && Date.now() - usersLoadedAt < 15 * 60 * 1000) return;
+  try {
+    const u = await amo('/api/v4/users?limit=250');
+    const list = (u && u._embedded && u._embedded.users) || [];
+    if (list.length) {
+      userNames = {};
+      for (const x of list) userNames[x.id] = x.name;
+      usersLoadedAt = Date.now();
+    }
+  } catch (e) {
+    console.error('Не удалось загрузить сотрудников:', e.message);
+  }
+}
 
 async function loadStages() {
   try {
@@ -485,13 +545,7 @@ async function loadStages() {
     console.error('Не удалось получить список полей:', e.message);
   }
 
-  try {
-    const u = await amo('/api/v4/users?limit=250');
-    userNames = {};
-    for (const x of ((u && u._embedded && u._embedded.users) || [])) userNames[x.id] = x.name;
-  } catch (e) {
-    console.error('Не удалось загрузить сотрудников:', e.message);
-  }
+  await loadUsers();
 }
 
 /* Итог диагностики, проставленный менеджером руками, — самый надёжный
@@ -620,6 +674,7 @@ async function refresh() {
       leads.push(...batch);
       if (batch.length < 250) break;
     }
+    await loadUsers();                 // вдруг кого-то переименовали
     const phones = await loadPhones(leads);
     cache = {
       items: leads.map(toAppointment).filter(Boolean),
@@ -896,9 +951,9 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/api/config') {
     return json(200, {
-      managers: mineOnly(CONFIG.MANAGERS.map(m => ({ id: m.id, name: m.name })), user, 'id'),
+      managers: mineOnly(teamList().map(m => ({ id: m.id, name: m.name })), user, 'id'),
       // Полный состав отдела: нужен там, где цифры общие (продажи, воронка)
-      allManagers: CONFIG.MANAGERS.map(m => ({ id: m.id, name: m.name })),
+      allManagers: teamList().map(m => ({ id: m.id, name: m.name })),
       me: { name: user.name, role: user.role, managerId: user.managerId || null },
       // Нормативы показываем только руководителю
       norms: isAdmin(user) ? CONFIG.NORMS : null,
@@ -921,7 +976,12 @@ const server = http.createServer(async (req, res) => {
       data.managers = data.managers.map(m => ({
         ...m, ...(resp[m.id] || { avgResp: null, medResp: null, matched: 0, noCall: 0, newLeads: 0 }) }));
     }
-    return json(200, { ...data, managers: mineOnly(data.managers || [], user, 'id') });
+    // имена из Сипуни заменяем на актуальные из амо
+    const named = (data.managers || []).map(x => {
+      const m = CONFIG.MANAGERS.find(y => y.id === x.id);
+      return m ? { ...x, name: mname(m) } : x;
+    });
+    return json(200, { ...data, managers: mineOnly(named, user, 'id') });
   }
 
   // Сырой CSV — на случай, если цифры разойдутся с кабинетом Сипуни
@@ -1006,7 +1066,7 @@ const server = http.createServer(async (req, res) => {
       work: { total: work(null), byManager: Object.fromEntries(
         CONFIG.MANAGERS.map(m => [m.id, work(m.id)])) },
       total: count(list),
-      byManager: CONFIG.MANAGERS.map(m => ({
+      byManager: teamList().map(m => ({
         id: m.id, name: m.name, ...count(list.filter(l => l.m === m.id)),
       })),
       other: count(list.filter(l => !l.m)),
@@ -1014,6 +1074,40 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ── Хранилище таблицы эффективности
+  /* ── Доступы ──────────────────────────────────────────────────
+     Список учёток и выдача нового пароля. Пароль показывается один
+     раз — на сервере остаётся только свёртка. */
+  if (url.pathname === '/api/users') {
+    if (!isAdmin(user)) return json(403, { error: 'Только для руководителя' });
+    return json(200, {
+      users: (CONFIG.USERS || []).map(u => {
+        const man = CONFIG.MANAGERS.find(m => m.id === u.managerId);
+        const own = storedPassword(u.login);
+        return {
+          login: u.login,
+          name: man ? mname(man) : u.name,     // имя менеджера — актуальное из амо
+          role: u.role,
+          managerId: u.managerId || null,
+          passwordSource: own ? 'выдан через доску' : (process.env[u.passwordEnv] ? 'из настроек' : 'не задан'),
+          changedAt: own ? own.at : null,
+        };
+      }),
+    });
+  }
+
+  if (url.pathname === '/api/users/password' && req.method === 'POST') {
+    if (!isAdmin(user)) return json(403, { error: 'Только для руководителя' });
+    const body = JSON.parse(await readBody(req) || '{}');
+    const target = (CONFIG.USERS || []).find(u => u.login === String(body.login || '').toLowerCase());
+    if (!target) return json(400, { error: 'Нет такой учётной записи' });
+
+    const password = String(body.password || '').trim() || makePassword();
+    if (password.length < 8) return json(400, { error: 'Пароль короче восьми символов' });
+    setPassword(target.login, password);
+    console.log(`Пароль для «${target.login}» изменён (${user.login})`);
+    return json(200, { login: target.login, password });   // показываем один раз
+  }
+
   /* Эффективность по всему отделу. Видна всем, включая менеджеров:
      сравнивать себя с командой полезно, а личные звонки и встречи
      по-прежнему закрыты — здесь только сводные показатели. */
@@ -1030,13 +1124,13 @@ const server = http.createServer(async (req, res) => {
     try { calls = await sipuni.stats(from, to); } catch (e) {}
     try { resp = await responseTimes(from, to); } catch (e) {}
 
-    const managers = CONFIG.MANAGERS.map(m => {
+    const managers = teamList().map(m => {
       const mine = list.filter(l => l.m === m.id);
       const assigned = mine.filter(l => l.assigned);
       const c = (calls.managers || []).find(x => x.id === m.id) || {};
       const r = resp[m.id] || {};
       return {
-        id: m.id, name: m.name,
+        id: m.id, name: mname(m),
         leads: mine.length,
         assigned: assigned.length,
         came: held.filter(x => x.m === m.id && x.st === 'came').length,
