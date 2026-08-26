@@ -149,12 +149,16 @@ async function digestMorning() {
   // вчерашние лиды, до которых не дозвонились
   const yest = new Date(Date.parse(date + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10);
   try {
-    const resp = await responseTimes(yest, yest);
-    const noCall = Object.values(resp).reduce((a, r) => a + (r.noCall || 0), 0);
+    // звонки смотрим за вчера и сегодня: ночную заявку могли набрать утром
+    const resp = await responseTimes(yest, date, { createdOn: yest });
+    const noCall  = Object.values(resp).reduce((a, r) => a + (r.noCall  || 0), 0);
+    const noPhone = Object.values(resp).reduce((a, r) => a + (r.noPhone || 0), 0);
     const leads = (cache.leads || []).filter(l => l.created === yest).length;
     if (leads) {
-      lines.push('', `Вчера пришло ${plural(leads, 'лид', 'лида', 'лидов')}` +
-        (noCall ? `, без звонка остались <b>${noCall}</b>` : ', все обзвонены'));
+      const tail = noCall
+        ? `, без звонка остались <b>${noCall}</b>` + (noPhone ? ` · без телефона ${noPhone}` : '')
+        : ', все обзвонены';
+      lines.push('', `Вчера пришло ${plural(leads, 'лид', 'лида', 'лидов')}${tail}`);
     }
   } catch (e) { /* без этой строки сводка тоже полезна */ }
 
@@ -313,6 +317,27 @@ function saveStore() {
   }
 }
 
+const salesKey = m => `neadpulse:sales:${m}`;
+
+function readSales(month) {
+  try { return JSON.parse(store[salesKey(month)] || '{}'); }
+  catch { return {}; }
+}
+
+/* Перед записью откладываем предыдущую версию: двадцать последних
+   состояний хранятся рядом, поэтому испорченную таблицу можно вернуть. */
+function writeSales(month, data, who) {
+  const key = salesKey(month);
+  if (store[key]) {
+    let hist = [];
+    try { hist = JSON.parse(store[key + ':hist'] || '[]'); } catch {}
+    hist.push({ at: new Date().toISOString(), who: who || '', value: store[key] });
+    store[key + ':hist'] = JSON.stringify(hist.slice(-20));
+  }
+  store[key] = JSON.stringify(data);
+  saveStore();
+}
+
 /* Читаем тело запроса целиком, с ограничением размера */
 function readBody(req, limit = 5 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
@@ -326,7 +351,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-26.1';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-26.3';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -649,12 +674,17 @@ function workSeconds(startTs, endTs) {
 
 /* ── Время реакции: сколько прошло от создания сделки до первого
    исходящего звонка менеджера на телефон этого клиента ────────── */
-async function responseTimes(from, to) {
+/* opts.createdOn — считать только лиды, созданные в этот день.
+   Нужно для сводки: иначе в «без звонка» попадают вчерашние и
+   позавчерашние заявки, и число выходит больше, чем пришло за день. */
+async function responseTimes(from, to, opts = {}) {
   const out = {};
   for (const m of CONFIG.MANAGERS) out[m.id] = { deltas: [], noCall: 0, leads: 0 };
 
+  /* Раньше при пустой выгрузке звонков функция выходила сразу — и все
+     лиды считались обзвоненными. Теперь считаем как есть: нет звонков,
+     значит никому не звонили. */
   const calls = await sipuni.rows(from, to);
-  if (!calls.length) return finishResponse(out);
 
   // Раскладываем звонки: внутренний номер → телефон клиента → отметки времени
   const byExt = new Map();
@@ -675,8 +705,12 @@ async function responseTimes(from, to) {
 
   for (const lead of (cache.leads || [])) {
     if (!lead.m || !lead.createdTs) continue;
-    if (earliest && lead.createdTs < earliest) continue;
-    if (to && lead.created > to) continue;
+    if (opts.createdOn) {
+      if (lead.created !== opts.createdOn) continue;    // строго один день
+    } else {
+      if (earliest && lead.createdTs < earliest) continue;
+      if (to && lead.created > to) continue;
+    }
     if (!lead.phones.length) { out[lead.m].noPhone = (out[lead.m].noPhone || 0) + 1; continue; }
 
     const man = CONFIG.MANAGERS.find(x => x.id === lead.m);
@@ -980,6 +1014,102 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ── Хранилище таблицы эффективности
+  /* Эффективность по всему отделу. Видна всем, включая менеджеров:
+     сравнивать себя с командой полезно, а личные звонки и встречи
+     по-прежнему закрыты — здесь только сводные показатели. */
+  if (url.pathname === '/api/efficiency') {
+    const today = new Date().toISOString().slice(0, 10);
+    const from = url.searchParams.get('from') || today;
+    const to   = url.searchParams.get('to')   || from;
+
+    const list = (cache.leads || []).filter(l => l.created >= from && l.created <= to);
+    const held = (cache.items || []).filter(x => x.date >= from && x.date <= to);
+
+    let calls = { managers: [], partial: false };
+    let resp = {};
+    try { calls = await sipuni.stats(from, to); } catch (e) {}
+    try { resp = await responseTimes(from, to); } catch (e) {}
+
+    const managers = CONFIG.MANAGERS.map(m => {
+      const mine = list.filter(l => l.m === m.id);
+      const assigned = mine.filter(l => l.assigned);
+      const c = (calls.managers || []).find(x => x.id === m.id) || {};
+      const r = resp[m.id] || {};
+      return {
+        id: m.id, name: m.name,
+        leads: mine.length,
+        assigned: assigned.length,
+        came: held.filter(x => x.m === m.id && x.st === 'came').length,
+        won: mine.filter(l => l.won).length,
+        attempts: c.attempts || 0,
+        connected: c.connected || 0,
+        rate: c.rate ?? null,
+        talkSec: c.talkSec || 0,
+        medResp: r.medResp ?? null,
+        avgResp: r.avgResp ?? null,
+        noCall: r.noCall || 0,          // новые лиды, которым так и не позвонили
+        newLeads: r.newLeads || 0,
+      };
+    });
+
+    return json(200, {
+      from, to, managers,
+      hasCalls: Boolean((calls.managers || []).length),
+      partial: Boolean(calls.partial),
+      updatedAt: cache.updatedAt,
+    });
+  }
+
+  /* ── Продажи ──────────────────────────────────────────────────
+     Пишем по одной ячейке, а не всю таблицу целиком: так введённые
+     числа не могут «слететь» из-за того, что кто-то отправил свою
+     версию таблицы поверх чужой. Перед каждой записью сохраняем
+     предыдущее состояние — его всегда можно вернуть. */
+  if (url.pathname === '/api/sales') {
+    const month = String(url.searchParams.get('month') || '').slice(0, 7);
+
+    if (req.method === 'GET') {
+      if (!/^\d{4}-\d{2}$/.test(month)) return json(400, { error: 'Не указан месяц' });
+      return json(200, { month, sales: readSales(month) });
+    }
+
+    if (req.method === 'POST') {
+      if (!isAdmin(user)) return json(403, { error: 'Продажи меняет только руководитель' });
+      const body = JSON.parse(await readBody(req) || '{}');
+      const mon = String(body.month || '').slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(mon)) return json(400, { error: 'Неверный месяц' });
+      if (!CONFIG.MANAGERS.some(m => m.id === body.manager))
+        return json(400, { error: 'Неизвестный менеджер' });
+
+      const day = Number(body.day);
+      if (!(day >= 1 && day <= 31)) return json(400, { error: 'Неверный день' });
+
+      const raw = body.value;
+      const value = (raw === '' || raw === null || raw === undefined) ? '' : Number(raw);
+      if (value !== '' && (!Number.isFinite(value) || value < 0))
+        return json(400, { error: 'Сумма должна быть числом' });
+
+      const data = readSales(mon);
+      const row = Array.isArray(data[body.manager]) ? data[body.manager] : [];
+      // заполняем пропуски пустыми строками: дыры в массиве превращаются
+      // в null при сохранении и потом путают отображение
+      for (let i = 0; i < day; i++) if (row[i] === undefined || row[i] === null) row[i] = '';
+      row[day - 1] = value;
+      data[body.manager] = row;
+      writeSales(mon, data, `${user.login}: ${body.manager} день ${day} → ${value}`);
+      return json(200, { ok: true, month: mon, sales: data });
+    }
+  }
+
+  /* История правок: на случай, если что-то всё же испортили */
+  if (url.pathname === '/api/sales/history') {
+    if (!isAdmin(user)) return json(403, { error: 'Только для руководителя' });
+    const month = String(url.searchParams.get('month') || '').slice(0, 7);
+    let hist = [];
+    try { hist = JSON.parse(store[salesKey(month) + ':hist'] || '[]'); } catch {}
+    return json(200, { month, history: hist.map(h => ({ at: h.at, who: h.who })) });
+  }
+
   if (url.pathname === '/api/store') {
     const key = url.searchParams.get('key');
     if (req.method === 'GET') {
