@@ -256,7 +256,14 @@ function sameSecret(a, b) {
    в виде свёртки, а не открытым текстом. Если для входа пароль там
    есть, он важнее переменной окружения: так пароль можно поменять,
    не трогая настройки Railway. */
-const authKey = login => 'auth:' + login;
+const authKey = slot => 'auth:' + slot;
+
+/* Логин можно переименовать: в настройках остаётся неизменное «место»
+   (slot), а как оно называется снаружи — хранится рядом с данными.
+   Поэтому смена логина не рвёт ни пароль, ни статистику. */
+const loginKey = slot => 'users:login:' + slot;
+const loginOf  = u => store[loginKey(u.login)] || u.login;
+const findBySlot = slot => (CONFIG.USERS || []).find(u => u.login === String(slot || '').toLowerCase());
 
 function setPassword(login, password) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -280,7 +287,8 @@ function makePassword(len = 12) {
 }
 
 function checkLogin(login, password) {
-  const u = (CONFIG.USERS || []).find(u => u.login === String(login || '').trim().toLowerCase());
+  const typed = String(login || '').trim().toLowerCase();
+  const u = (CONFIG.USERS || []).find(x => loginOf(x) === typed);
   if (!u) return null;
 
   const own = storedPassword(u.login);
@@ -385,7 +393,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-26.4';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-08-26.5';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -1084,7 +1092,9 @@ const server = http.createServer(async (req, res) => {
         const man = CONFIG.MANAGERS.find(m => m.id === u.managerId);
         const own = storedPassword(u.login);
         return {
-          login: u.login,
+          slot: u.login,                       // неизменное место в отделе
+          login: loginOf(u),                   // как человек входит сейчас
+          renamed: loginOf(u) !== u.login,
           name: man ? mname(man) : u.name,     // имя менеджера — актуальное из амо
           role: u.role,
           managerId: u.managerId || null,
@@ -1095,17 +1105,58 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  /* Переименовать логин: пришёл другой человек на то же место.
+     Статистика привязана к месту, поэтому она сохраняется. */
+  if (url.pathname === '/api/users/login' && req.method === 'POST') {
+    if (!isAdmin(user)) return json(403, { error: 'Только для руководителя' });
+    const body = JSON.parse(await readBody(req) || '{}');
+    const target = findBySlot(body.slot);
+    if (!target) return json(400, { error: 'Нет такой учётной записи' });
+
+    const login = String(body.login || '').trim().toLowerCase();
+    if (!/^[a-z][a-z0-9_.-]{2,19}$/.test(login))
+      return json(400, { error: 'Логин: латиница и цифры, от 3 до 20 символов, начинается с буквы' });
+    const busy = (CONFIG.USERS || []).some(u => u.login !== target.login && loginOf(u) === login);
+    if (busy) return json(400, { error: 'Такой логин уже занят' });
+
+    store[loginKey(target.login)] = login;
+    saveStore();
+    console.log(`Логин «${target.login}» теперь «${login}» (${user.login})`);
+    return json(200, { slot: target.login, login });
+  }
+
+  /* Новый сотрудник на место: сразу и логин, и пароль */
+  if (url.pathname === '/api/users/replace' && req.method === 'POST') {
+    if (!isAdmin(user)) return json(403, { error: 'Только для руководителя' });
+    const body = JSON.parse(await readBody(req) || '{}');
+    const target = findBySlot(body.slot);
+    if (!target) return json(400, { error: 'Нет такой учётной записи' });
+
+    const login = String(body.login || '').trim().toLowerCase();
+    if (!/^[a-z][a-z0-9_.-]{2,19}$/.test(login))
+      return json(400, { error: 'Логин: латиница и цифры, от 3 до 20 символов, начинается с буквы' });
+    if ((CONFIG.USERS || []).some(u => u.login !== target.login && loginOf(u) === login))
+      return json(400, { error: 'Такой логин уже занят' });
+
+    const password = makePassword();
+    store[loginKey(target.login)] = login;
+    setPassword(target.login, password);
+    console.log(`Место «${target.login}» передано: логин «${login}» (${user.login})`);
+    return json(200, { slot: target.login, login, password });
+  }
+
   if (url.pathname === '/api/users/password' && req.method === 'POST') {
     if (!isAdmin(user)) return json(403, { error: 'Только для руководителя' });
     const body = JSON.parse(await readBody(req) || '{}');
-    const target = (CONFIG.USERS || []).find(u => u.login === String(body.login || '').toLowerCase());
+    const asked = String(body.slot || body.login || '').toLowerCase();
+    const target = findBySlot(asked) || (CONFIG.USERS || []).find(u => loginOf(u) === asked);
     if (!target) return json(400, { error: 'Нет такой учётной записи' });
 
     const password = String(body.password || '').trim() || makePassword();
     if (password.length < 8) return json(400, { error: 'Пароль короче восьми символов' });
     setPassword(target.login, password);
-    console.log(`Пароль для «${target.login}» изменён (${user.login})`);
-    return json(200, { login: target.login, password });   // показываем один раз
+    console.log(`Пароль для «${loginOf(target)}» изменён (${user.login})`);
+    return json(200, { login: loginOf(target), password });   // показываем один раз
   }
 
   /* Эффективность по всему отделу. Видна всем, включая менеджеров:
