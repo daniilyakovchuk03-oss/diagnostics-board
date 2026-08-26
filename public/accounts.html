@@ -95,6 +95,7 @@ tr:last-child td{border-bottom:0}
 .btn{background:transparent;border:1px solid var(--rule);border-radius:8px;padding:7px 12px;
   cursor:pointer;font-size:13px;white-space:nowrap;transition:.15s ease}
 .btn:hover{border-color:var(--blue);color:var(--blue)}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
 
 .pass{margin-top:16px;background:var(--panel);border:1px solid var(--green);border-radius:var(--r);
   padding:16px 18px;box-shadow:var(--shadow)}
@@ -112,22 +113,23 @@ tr:last-child td{border-bottom:0}
 <div class="wrap">
   <h2>Доступы к доске</h2>
   <div class="card3"><table>
-    <thead><tr><th>Логин</th><th>Кто</th><th>Права</th><th>Пароль</th><th></th></tr></thead>
+    <thead><tr><th>Логин</th><th>Кто</th><th>Права</th><th>Пароль</th><th>Действия</th></tr></thead>
     <tbody id="rows"><tr><td colspan="5">Загружаем…</td></tr></tbody>
   </table></div>
 
   <div class="pass" id="pass" hidden>
     <b>Новый пароль для <span id="passLogin"></span></b>
     <div class="val" id="passVal"></div>
-    <div class="hint">Скопируйте и передайте сотруднику. Больше он нигде не показывается —
-      на сервере хранится только зашифрованный отпечаток. Старый пароль перестал действовать.</div>
+    <div class="hint" id="passNote"></div>
+    <div class="hint">Скопируйте и передайте сотруднику. Больше пароль нигде не показывается —
+      на сервере хранится только зашифрованный отпечаток.</div>
   </div>
 
   <div class="note">
     Имена подтягиваются из amoCRM: переименуете сотрудника там — изменится и здесь.
-    Логин при этом остаётся прежним, он привязан к месту в отделе, а не к человеку.
-    <b>Пришёл новый сотрудник на то же место — выдайте новый пароль</b>, и доступ предыдущего
-    перестанет работать.
+    <b>Пришёл новый человек на место</b> — нажмите «Новый сотрудник»: система спросит логин,
+    сразу выдаст пароль, а прежний доступ отключит. Вся статистика по этому месту сохранится,
+    потому что она привязана к месту в отделе, а не к логину.
   </div>
 </div>
 
@@ -141,41 +143,75 @@ async function load(){
     const d = await r.json();
     $('rows').innerHTML = d.users.map(u => `
       <tr>
-        <td class="login">${u.login}</td>
+        <td class="login">${u.login}${u.renamed ? `<div class="src">место: ${u.slot}</div>` : ''}</td>
         <td>${u.name}</td>
         <td><span class="tag2 ${u.role}">${u.role === 'admin' ? 'полный доступ' : 'менеджер'}</span></td>
         <td class="src">${u.passwordSource}${u.changedAt ? ' · ' + new Date(u.changedAt)
             .toLocaleDateString('ru-RU', {day:'numeric', month:'short'}) : ''}</td>
-        <td><button class="btn" data-login="${u.login}">Новый пароль</button></td>
+        <td class="acts">
+          ${u.role === 'manager'
+            ? `<button class="btn" data-act="replace" data-slot="${u.slot}">Новый сотрудник</button>` : ''}
+          <button class="btn" data-act="rename" data-slot="${u.slot}" data-login="${u.login}">Логин</button>
+          <button class="btn" data-act="pass" data-slot="${u.slot}">Пароль</button>
+        </td>
       </tr>`).join('');
   }catch(e){
     $('rows').innerHTML = `<tr><td colspan="5">Не удалось получить список: ${e.message}</td></tr>`;
   }
 }
 
-document.addEventListener('click', async e => {
-  const b = e.target.closest('button[data-login]');
-  if(!b) return;
-  const login = b.dataset.login;
-  if(!confirm(`Выдать новый пароль для «${login}»? Старый перестанет работать.`)) return;
+async function send(url, body){
+  const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'},
+                               body: JSON.stringify(body) });
+  const d = await r.json();
+  if(!r.ok) throw new Error(d.error || 'сервер ответил ' + r.status);
+  return d;
+}
 
-  b.disabled = true; b.textContent = 'Создаём…';
+function showPass(login, password, note){
+  $('passLogin').textContent = login;
+  $('passVal').textContent = password;
+  $('passNote').textContent = note || '';
+  $('pass').hidden = false;
+  $('pass').scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('button[data-act]');
+  if(!b) return;
+  const { act, slot, login } = b.dataset;
+  const was = b.textContent;
+  b.disabled = true; b.textContent = '…';
+
   try{
-    const r = await fetch('/api/users/password', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ login }),
-    });
-    const d = await r.json();
-    if(!r.ok) throw new Error(d.error || r.status);
-    $('passLogin').textContent = d.login;
-    $('passVal').textContent = d.password;
-    $('pass').hidden = false;
-    $('pass').scrollIntoView({ behavior:'smooth', block:'center' });
+    if(act === 'pass'){
+      if(confirm('Выдать новый пароль? Старый перестанет работать.')){
+        const d = await send('/api/users/password', { slot });
+        showPass(d.login, d.password, 'Логин прежний, изменился только пароль.');
+      }
+    }
+
+    if(act === 'rename'){
+      const next = prompt('Новый логин латиницей, например aibek:', login);
+      if(next && next.trim()){
+        const d = await send('/api/users/login', { slot, login: next });
+        alert(`Готово. Теперь вход по логину «${d.login}». Пароль не изменился.`);
+      }
+    }
+
+    if(act === 'replace'){
+      const next = prompt('Логин нового сотрудника латиницей, например aibek:');
+      if(next && next.trim()){
+        const d = await send('/api/users/replace', { slot, login: next });
+        showPass(d.login, d.password,
+          'Прежний сотрудник доступ потерял. Статистика по этому месту сохранена.');
+      }
+    }
     load();
-  }catch(e){
-    alert('Не получилось: ' + e.message);
+  }catch(err){
+    alert('Не получилось: ' + err.message);
   }
-  b.disabled = false; b.textContent = 'Новый пароль';
+  b.disabled = false; b.textContent = was;
 });
 
 if (matchMedia('(prefers-color-scheme: light)').matches)
