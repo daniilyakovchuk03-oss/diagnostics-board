@@ -165,6 +165,9 @@ button{font:inherit;color:inherit}
 }
 .chip:hover{border-color:var(--frame-lit)}
 .chip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.filters{display:contents}
+.chip i{font-style:normal;font-weight:600;opacity:.55;margin-left:2px}
+.chip-sep{width:1px;height:20px;background:var(--rule);align-self:center;margin:0 2px}
 .spacer{flex:1}
 .add{
   background:var(--blue);color:#fff;border:0;border-radius:8px;padding:8px 16px;
@@ -577,11 +580,7 @@ html[data-theme="dark"] .uhead__ava{color:#0D1117}
 
   <main class="board">
     <div class="controls">
-      <button class="chip" data-filter="all" aria-pressed="true">Все</button>
-      <button class="chip" data-filter="wait" aria-pressed="false">Ожидают</button>
-      <button class="chip" data-filter="came" aria-pressed="false">Пришли</button>
-      <button class="chip" data-filter="no" aria-pressed="false">Не пришли</button>
-      <button class="chip" data-filter="late" aria-pressed="false">Без отметки</button>
+      <span id="filters" class="filters"></span>
       <span class="spacer"></span>
       <button class="chip" id="viewBoard" aria-pressed="true">Доска</button>
       <button class="chip" id="viewGrid" aria-pressed="false">Сетка по времени</button>
@@ -641,7 +640,7 @@ const dateOf = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y,
 const shift = (s,days) => { const d=dateOf(s); d.setDate(d.getDate()+days); return isoOf(d); };
 const daysBetween = (a,b) => Math.round((dateOf(b)-dateOf(a))/86400000);
 
-const state = { from:isoOf(today), to:isoOf(today), items:[], filter:'all', mk:null, view:'board',
+const state = { from:isoOf(today), to:isoOf(today), items:[], filter:new Set(), mk:null, view:'board',
                 mkEnabled:false, configured:false, updatedAt:null, failed:false,
                 tab:'board', calls:null, funnel:null, src:'', user:null, busy:false, me:null, norms:null, open:new Set(), details:{} };
 const isRange = () => state.from !== state.to;
@@ -727,12 +726,60 @@ function eff(x){
   return when < new Date() ? 'late' : 'wait';
 }
 
+/* Быстрые фильтры. Рядом с каждым — сколько таких встреч,
+   чтобы не приходилось переключаться, чтобы это узнать. */
+/* Быстрые фильтры. Можно выбирать сразу несколько: внутри одной
+   группы условия складываются («пришли ИЛИ не пришли»), а между
+   группами — пересекаются («пришли И с таргета»). Так сочетания
+   получаются осмысленными, а не пустыми. */
+const FILTERS = [
+  { id:'wait',   name:'Ожидают',     group:'st',  test: x => eff(x) === 'wait' },
+  { id:'late',   name:'Без отметки', group:'st',  test: x => eff(x) === 'late' },
+  { id:'came',   name:'Пришли',      group:'st',  test: x => eff(x) === 'came' },
+  { id:'no',     name:'Не пришли',   group:'st',  test: x => eff(x) === 'no' },
+  { id:'won',    name:'Оплатили',    group:'fl',  test: x => !!x.won },
+  { id:'lost',   name:'ЗНР',         group:'fl',  test: x => !!x.lost },
+  { id:'bot',    name:'Звонобот',    group:'src', test: x => x.src === 'bot' },
+  { id:'target', name:'Таргет',      group:'src', test: x => x.src === 'target' },
+];
+
+/* Отбор: пустой набор — показываем всё */
+function passes(x){
+  const chosen = FILTERS.filter(f => state.filter.has(f.id));
+  if(!chosen.length) return true;
+  for(const group of new Set(chosen.map(f => f.group))){
+    const any = chosen.filter(f => f.group === group).some(f => f.test(x));
+    if(!any) return false;
+  }
+  return true;
+}
+
+function renderFilters(){
+  const box = document.getElementById('filters');
+  if(!box) return;
+
+  const none = state.filter.size === 0;
+  let out = `<button class="chip" data-filter="all" aria-pressed="${none}">Все${
+    state.busy ? '' : ` <i>${state.items.length}</i>`}</button>`;
+
+  let prev = null;
+  for(const f of FILTERS){
+    const n = state.busy ? null : state.items.filter(f.test).length;
+    // пустые срезы прячем, но выбранный оставляем — иначе его не снять
+    if(n === 0 && !state.filter.has(f.id)) continue;
+    if(prev && prev !== f.group) out += '<span class="chip-sep"></span>';
+    prev = f.group;
+    out += `<button class="chip" data-filter="${f.id}" aria-pressed="${state.filter.has(f.id)}">${
+      f.name}${n === null ? '' : ` <i>${n}</i>`}</button>`;
+  }
+  box.innerHTML = out;
+}
+
 /* ── Отрисовка ────────────────────────────────────────────── */
 function visible(){
   return state.items.filter(x=>{
     if(state.mk && x.mk !== state.mk) return false;
-    if(state.filter==='all') return true;
-    return eff(x) === state.filter;
+    return passes(x);
   });
 }
 
@@ -943,7 +990,7 @@ function render(){
   if(isRange() && state.view === 'grid') setView('board');
   document.getElementById('rail').hidden = !state.mkEnabled;
   document.getElementById('wrap').classList.toggle('solo', !state.mkEnabled);
-  renderStats(); renderSource(); renderNotice();
+  renderStats(); renderSource(); renderNotice(); renderFilters();
   state.view==='board' ? renderCols() : renderGrid();
   document.getElementById('cols').classList.toggle('hidden', state.view!=='board');
   document.getElementById('gridWrap').classList.toggle('hidden', state.view!=='grid');
@@ -1338,8 +1385,9 @@ document.addEventListener('click', e=>{
   if(sc){ state.src = sc.dataset.src; state.funnel = null; renderFunnel(); loadFunnel(); return; }
   const chip = e.target.closest('.chip[data-filter]');
   if(chip){
-    state.filter = chip.dataset.filter;
-    document.querySelectorAll('.chip[data-filter]').forEach(c=>c.setAttribute('aria-pressed', c===chip));
+    const id = chip.dataset.filter;
+    if(id === 'all') state.filter.clear();
+    else state.filter.has(id) ? state.filter.delete(id) : state.filter.add(id);
     render();
   }
 });
