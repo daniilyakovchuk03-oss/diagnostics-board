@@ -393,7 +393,7 @@ function readBody(req, limit = 5 * 1024 * 1024) {
   });
 }
 
-const BUILD = '2026-08-26.9';   // меняется с каждой правкой — видно в /health
+const BUILD = '2026-09-02.1';   // меняется с каждой правкой — видно в /health
 
 const DOMAIN = (process.env.AMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
 const TOKEN  = process.env.AMO_TOKEN || '';
@@ -1314,14 +1314,18 @@ const server = http.createServer(async (req, res) => {
     return json(200, { month, history: hist.map(h => ({ at: h.at, who: h.who })) });
   }
 
+  /* Служебное хранилище закрыто целиком, включая чтение: рядом с продажами
+     лежат свёртки паролей и отметки Телеграма. Раньше проверка стояла только
+     на записи, и любой вошедший менеджер мог забрать хэш пароля руководителя.
+     Доска сюда не ходит вовсе — продажи читаются через /api/sales. */
   if (url.pathname === '/api/store') {
+    if (!isAdmin(user)) return json(403, { error: 'Только для руководителя' });
     const key = url.searchParams.get('key');
     if (req.method === 'GET') {
       if (!key) return json(400, { error: 'Не указан ключ' });
       return json(200, { key, value: store[key] ?? null });
     }
     if (req.method === 'POST') {
-      if (!isAdmin(user)) return json(403, { error: 'Только для руководителя' });
       const body = JSON.parse(await readBody(req) || '{}');
       if (!body.key) return json(400, { error: 'Не указан ключ' });
       store[body.key] = String(body.value ?? '');
@@ -1329,13 +1333,13 @@ const server = http.createServer(async (req, res) => {
       return json(200, { key: body.key, ok: true });
     }
     if (req.method === 'DELETE') {
-      if (!isAdmin(user)) return json(403, { error: 'Только для руководителя' });
       if (key) { delete store[key]; saveStore(); }
       return json(200, { key, deleted: true });
     }
   }
 
   if (url.pathname === '/api/store/list') {
+    if (!isAdmin(user)) return json(403, { error: 'Только для руководителя' });
     const prefix = url.searchParams.get('prefix') || '';
     return json(200, { keys: Object.keys(store).filter(k => k.startsWith(prefix)) });
   }
